@@ -1,0 +1,17 @@
+name: career-notebook
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: career
+      POSTGRES_PASSWORD: career_local_only
+      POSTGRES_DB: career
+    ports: ["127.0.0.1:5544:5432"]
+    volumes: ["career-db:/var/lib/postgresql/data"]
+    restart: unless-stopped
+  mail:
+    image: axllent/mailpit:latest
+    ports: ["127.0.0.1:1026:1025", "127.0.0.1:8026:8025"]
+    restart: unless-stopped
+volumes:
+  career-db:

@@ -1,0 +1,195 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+model User {
+  id String @id
+  name String
+  email String @unique
+  emailVerified Boolean @default(false)
+  image String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sessions Session[]
+  accounts Account[]
+}
+model Session {
+  id String @id
+  expiresAt DateTime
+  token String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@index([userId])
+}
+model Account {
+  id String @id
+  accountId String
+  providerId String
+  userId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  accessToken String?
+  refreshToken String?
+  idToken String?
+  accessTokenExpiresAt DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope String?
+  password String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId])
+}
+model Verification {
+  id String @id
+  identifier String
+  value String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([identifier])
+}
+model Application {
+  id String @id @default(cuid())
+  userId String
+  company String
+  role String
+  city String @default("")
+  batch String @default("2027 届秋招")
+  stage String @default("待投递")
+  stageStatus String @default("待安排")
+  outcome String @default("")
+  appliedAt DateTime?
+  url String @default("")
+  notes String @default("")
+  resumeId String?
+  version Int @default(1)
+  history Json @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId,company])
+}
+model Event {
+  id String @id @default(cuid())
+  userId String
+  applicationId String?
+  title String
+  kind String @default("面试")
+  start DateTime?
+  end DateTime?
+  deadline DateTime?
+  status String @default("待完成")
+  location String @default("")
+  notes String @default("")
+  reminderHours Float[] @default([24])
+  absoluteReminders DateTime[] @default([])
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId,start])
+}
+model NotificationJob {
+  id String @id @default(cuid())
+  userId String
+  eventId String
+  eventVersion Int
+  scheduledAt DateTime
+  state String @default("pending")
+  attempts Int @default(0)
+  leaseUntil DateTime?
+  lastError String @default("")
+  acceptedAt DateTime?
+  @@unique([eventId,eventVersion,scheduledAt])
+  @@index([state,scheduledAt])
+}
+model FileAsset {
+  id String @id @default(cuid())
+  userId String
+  name String
+  mime String
+  size Int
+  key String @unique
+  hash String
+  createdAt DateTime @default(now())
+}
+model Resume {
+  id String @id @default(cuid())
+  userId String
+  series String
+  number Int
+  fileId String
+  target String @default("")
+  notes String @default("")
+  current Boolean @default(false)
+  archived Boolean @default(false)
+  createdAt DateTime @default(now())
+  @@unique([userId,series,number])
+}
+model Preparation {
+  id String @id @default(cuid())
+  userId String
+  company String
+  role String
+  round String @default("一面")
+  jd String @default("")
+  applicationId String?
+  eventId String?
+  resumeId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model Material {
+  id String @id @default(cuid())
+  userId String
+  preparationId String?
+  title String
+  kind String @default("问题回答")
+  content String
+  tags String @default("")
+  source String @default("手动整理")
+  parentId String?
+  revisions Json @default("[]")
+  version Int @default(1)
+  archived Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId,preparationId])
+}
+model Interview {
+  id String @id @default(cuid())
+  userId String
+  preparationId String
+  questions Json
+  sources Json @default("[]")
+  turns Json @default("[]")
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model Draft {
+  id String @id @default(cuid())
+  userId String
+  kind String
+  input String
+  result Json
+  confirmed Boolean @default(false)
+  createdAt DateTime @default(now())
+}
+model Settings {
+  userId String @id
+  email String @default("")
+  emailVerified Boolean @default(false)
+  verifyToken String?
+  verifyExpires DateTime?
+  availability Json @default("{\"weekdays\":[19,22],\"weekends\":[9,18]}")
+  availabilityConfirmed Boolean @default(false)
+}
+model Heartbeat {
+  id String @id
+  updatedAt DateTime @updatedAt
+}

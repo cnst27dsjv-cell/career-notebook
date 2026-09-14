@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.env
+.env.*
+!.env.example
+storage/*
+!storage/.gitkeep
+06_临时文件/*
+*.tsbuildinfo
+playwright-report/
+test-results/
