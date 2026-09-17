@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "@fontsource/cormorant-garamond": "^5.2.0",
+    "@fontsource/italiana": "^5.3.0",
     "@fontsource/pinyon-script": "^5.2.0",
+    "@fontsource/source-serif-4": "^5.3.0",
     "@fullcalendar/daygrid": "^6.1.19",
     "@fullcalendar/interaction": "^6.1.19",
     "@fullcalendar/list": "^6.1.19",

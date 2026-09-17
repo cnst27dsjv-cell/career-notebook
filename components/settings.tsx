@@ -11,6 +11,24 @@ import { Form, Field } from "./ui";
 export default function Settings() {
   const { data, mutate, notify } = useWorkspace();
   const [busy, setBusy] = useState(false);
+  const [connectionBusy, setConnectionBusy] = useState<
+    "model" | "search" | null
+  >(null);
+  const testConnection = async (target: "model" | "search") => {
+    setConnectionBusy(target);
+    try {
+      const result = await api("/api/ai", { action: "connection", target });
+      notify(
+        target === "model"
+          ? "AI 连接成功，测试未包含个人资料。"
+          : `联网搜索成功，取得 ${result.sourceCount} 个来源。`,
+      );
+    } catch (e) {
+      notify((e as Error).message);
+    } finally {
+      setConnectionBusy(null);
+    }
+  };
   return (
     <>
       <div className="page-heading">
@@ -156,11 +174,43 @@ export default function Settings() {
             </div>
             <div>
               <span>AI 助理</span>
-              <b>{data.services.model ? "已配置" : "待配置"}</b>
+              <b>
+                {data.services.model
+                  ? data.services.generalModel
+                  : "待填写密钥"}
+              </b>
+            </div>
+            <div>
+              <span>中文润色</span>
+              <b>{data.services.polishModel || "跟随默认模型"}</b>
             </div>
             <div>
               <span>联网调研</span>
-              <b>{data.services.search ? "已配置" : "待配置"}</b>
+              <b>
+                {data.services.search
+                  ? data.services.searchModel
+                  : "待填写密钥"}
+              </b>
+            </div>
+            <div className="service-test-actions">
+              <button
+                className="secondary"
+                type="button"
+                disabled={connectionBusy !== null || !data.services.model}
+                onClick={() => testConnection("model")}
+              >
+                {connectionBusy === "model" ? "正在测试…" : "测试 AI 连接"}
+              </button>
+              <button
+                className="secondary"
+                type="button"
+                disabled={connectionBusy !== null || !data.services.search}
+                onClick={() => testConnection("search")}
+              >
+                {connectionBusy === "search"
+                  ? "正在搜索…"
+                  : "测试联网搜索"}
+              </button>
             </div>
             {data.services.mailMode === "capture" && (
               <a
@@ -174,8 +224,7 @@ export default function Settings() {
               </a>
             )}
             <p className="help">
-              模型与搜索密钥配置在服务器环境中。QQ
-              邮箱自动同步、微信提醒将在后续版本接入。
+              测试只发送公开的固定文字，但仍会消耗少量模型额度。模型密钥配置在服务器环境中；QQ 邮箱自动同步、微信提醒将在后续版本接入。
             </p>
           </section>
           <section className="paper-panel export-panel">

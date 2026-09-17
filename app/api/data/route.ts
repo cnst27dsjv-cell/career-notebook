@@ -58,15 +58,46 @@ const eventSchema = z
     (v) => !v.start || !v.deadline || (v.end ?? v.start) <= v.deadline,
     "执行时间不能晚于截止时间",
   );
-const materialSchema = z.object({
-  title: text.min(1),
-  content: text.min(1),
-  kind: text.default("问题回答"),
-  tags: text.default(""),
-  source: text.default("手动整理"),
-  preparationId: z.string().nullable().optional(),
-  parentId: z.string().nullable().optional(),
-});
+const materialSchema = z
+  .object({
+    title: text.min(1),
+    content: text.min(1),
+    category: z.enum(["岗位特有", "通用问题", "待确认"]).default("待确认"),
+    kind: text.default("边界或分类待确认"),
+    roleScope: text.default(""),
+    tags: text.default(""),
+    source: text.default("手动整理"),
+    preparationId: z.string().nullable().optional(),
+    parentId: z.string().nullable().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const allowed = {
+      岗位特有: [
+        "自我介绍",
+        "求职动机",
+        "岗位相关专业问题与知识点",
+        "Case",
+        "其他",
+      ],
+      通用问题: ["个性问题", "行为面试", "其他通用问题"],
+      待确认: ["边界或分类待确认"],
+    }[value.category];
+    if (!allowed.includes(value.kind))
+      ctx.addIssue({
+        code: "custom",
+        path: ["kind"],
+        message: "二级类目与一级类目不匹配",
+      });
+    if (value.category === "岗位特有" && !value.roleScope)
+      ctx.addIssue({
+        code: "custom",
+        path: ["roleScope"],
+        message: "岗位特有资料需要填写适用岗位",
+      });
+  })
+  .transform((value) =>
+    value.category === "通用问题" ? { ...value, roleScope: "" } : value,
+  );
 export async function GET(request: Request) {
   try {
     const user = await userFor(request);
@@ -77,6 +108,7 @@ export async function GET(request: Request) {
       resumes,
       preparations,
       materials,
+      materialRoles,
       interviews,
       files,
       settings,
@@ -91,6 +123,7 @@ export async function GET(request: Request) {
         where: { ...w, archived: false },
         orderBy: { updatedAt: "desc" },
       }),
+      db.materialRole.findMany({ where: w, orderBy: { createdAt: "asc" } }),
       db.interview.findMany({ where: w, orderBy: { updatedAt: "desc" } }),
       db.fileAsset.findMany({
         where: w,
@@ -114,6 +147,7 @@ export async function GET(request: Request) {
       resumes,
       preparations,
       materials,
+      materialRoles,
       interviews,
       files,
       settings: {
@@ -125,7 +159,10 @@ export async function GET(request: Request) {
       jobs,
       services: {
         model: !!(process.env.MODEL_API_KEY && process.env.MODEL_NAME),
-        search: !!process.env.SEARCH_API_KEY,
+        search: !!(process.env.MODEL_API_KEY && process.env.MODEL_SEARCH_NAME),
+        generalModel: process.env.MODEL_NAME || "",
+        polishModel: process.env.MODEL_POLISH_NAME || "",
+        searchModel: process.env.MODEL_SEARCH_NAME || "",
         mailMode: process.env.MAIL_MODE || "unconfigured",
         worker: heartbeat?.updatedAt || null,
       },
@@ -366,7 +403,7 @@ export async function POST(request: Request) {
       }
     } else if (action === "material.import") {
       const key = z.string().uuid().parse(raw.key);
-      const values = z.array(materialSchema).min(1).max(100).parse(raw.items);
+      const values = z.array(materialSchema).min(1).max(300).parse(raw.items);
       for (const v of values)
         if (v.preparationId) await own("preparation", v.preparationId);
       await db.$transaction(async (tx) => {
@@ -386,6 +423,18 @@ export async function POST(request: Request) {
             confirmed: true,
           },
         });
+        for (const roleScope of [
+          ...new Set(
+            values
+              .filter((v) => v.category === "岗位特有" && v.roleScope)
+              .map((v) => v.roleScope),
+          ),
+        ])
+          await tx.materialRole.upsert({
+            where: { userId_name: { userId: user.id, name: roleScope } },
+            create: { ...w, name: roleScope },
+            update: {},
+          });
         for (const v of values)
           await tx.material.create({ data: { ...w, ...v } });
       });
@@ -412,6 +461,14 @@ export async function POST(request: Request) {
       const values = materialSchema.parse(raw.values);
       if (values.preparationId) await own("preparation", values.preparationId);
       if (values.parentId) await own("material", values.parentId);
+      if (values.category === "岗位特有" && values.roleScope)
+        await db.materialRole.upsert({
+          where: {
+            userId_name: { userId: user.id, name: values.roleScope },
+          },
+          create: { ...w, name: values.roleScope },
+          update: {},
+        });
       if (id) {
         await own("material", id);
         await db.$transaction(async (tx) => {
@@ -430,6 +487,21 @@ export async function POST(request: Request) {
           if (r.count !== 1) throw new Error("资料已被修改，请刷新后重试");
         });
       } else await db.material.create({ data: { ...values, ...w } });
+    } else if (action === "materialRole.save") {
+      const name = text
+        .min(1)
+        .max(60)
+        .refine(
+          (value) => !["通用", "待确认"].includes(value),
+          "该名称为系统保留分类",
+        )
+        .parse(raw.name);
+      const role = await db.materialRole.upsert({
+        where: { userId_name: { userId: user.id, name } },
+        create: { ...w, name },
+        update: {},
+      });
+      return Response.json({ ok: true, id: role.id });
     } else if (action === "material.archive") {
       await own("material", id);
       await db.material.update({ where: { id }, data: { archived: true } });
@@ -528,6 +600,8 @@ export async function POST(request: Request) {
             preparationId: current.preparationId,
             title: String(q.question),
             content,
+            category: "待确认",
+            kind: "边界或分类待确认",
             source: `模拟面试 ${current.id} 第 ${i + 1} 题`,
             revisions: [
               { content: String(turn.answer), at: new Date().toISOString() },

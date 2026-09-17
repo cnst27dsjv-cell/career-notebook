@@ -1,14 +1,18 @@
 import { db } from "@/lib/db";
 import { userFor, failure } from "@/lib/http";
-import { generate } from "@/lib/model";
+import { generate, searchWeb } from "@/lib/model";
 import { z } from "zod";
 import { suggestSlots } from "@/lib/rules";
 import type { Prisma } from "@prisma/client";
-const item = z.object({
-  title: z.string().min(1),
-  content: z.string().min(1),
-  kind: z.string(),
-});
+import {
+  importBatches,
+  materialCategories,
+  materialKinds,
+  mergeClassifications,
+  splitInterviewMaterial,
+  type MaterialClassification,
+} from "@/lib/material-import";
+import { isSubstantivePolish } from "@/lib/polish";
 export async function POST(r: Request) {
   try {
     const user = await userFor(r);
@@ -16,35 +20,122 @@ export async function POST(r: Request) {
     const action = z.string().parse(raw.action);
     const w = { userId: user.id };
     const input = z.string().max(100000).optional().parse(raw.input) || "";
+    if (action === "connection") {
+      const target = z.enum(["model", "search"]).parse(raw.target);
+      if (target === "model") {
+        const result = z
+          .object({ ok: z.boolean() })
+          .parse(
+            await generate(
+              '这是连接测试。只返回 {"ok":true}。',
+              "不含个人信息的连接测试",
+            ),
+          );
+        return Response.json(result);
+      }
+      const result = await searchWeb("OpenAI Next Credits 官方接入指南");
+      return Response.json({ ok: true, sourceCount: result.sources.length });
+    }
     if (action === "polish") {
-      const result = z
-        .object({
-          content: z.string(),
-          feedback: z.string(),
-          questions: z.array(z.string()).default([]),
-        })
-        .parse(
+      const polishSchema = z.object({
+        content: z.string().min(1),
+        feedback: z.string(),
+        questions: z.array(z.string()).default([]),
+      });
+      const payload = {
+        input,
+        style: raw.style || "口语自然，表达清晰",
+        question: raw.question || "",
+        supplement:
+          z.string().max(20000).optional().parse(raw.supplement) || "",
+      };
+      const prompt =
+        "把用户原文润色成可直接用于面试回答的完整建议稿。首要目标是让回答结构清晰、思维逻辑严密、语句通顺流畅；先识别题目真正要回答的内容，再根据题型选择合适的组织方式，例如结论—理由—经历证据—岗位匹配，但不要死套模板，也不要为了显得不同而机械替换句式。明确原文中隐含但有事实支撑的因果关系，让每一段都服务于核心回答。保留岗位相关的专业术语和必要细节，语气应专业自然，既不过于书面化，也不过于口语化。其次再删减重复内容、改善段落衔接。content必须体现结构或论证上的实质性优化，不能只替换少量词语。保持用户事实、口吻和个人经历，不新增数字或用户未提供的经历。supplement是用户主动补充的事实，可以用于完善回答。若原文和supplement仍没有完整回答题目，也要先润色已有内容，不能用正在思考、经验不足、仍需实践等说法替用户编写缺失答案；只在content末尾加入【待补充：具体缺失内容】，同时在feedback中指出缺口，并把需要用户补充的信息写入questions。返回 {content,feedback,questions:需要补充的事实问题数组}。";
+      let result = polishSchema.parse(
+        await generate(prompt, payload, "polish"),
+      );
+      const insufficient = (content: string) =>
+        !isSubstantivePolish(input, content);
+      const missingMarkerRequired = (value: typeof result) =>
+        value.questions.length > 0 && !value.content.includes("【待补充：");
+      if (insufficient(result.content) || missingMarkerRequired(result)) {
+        const correction = [
+          insufficient(result.content)
+            ? "上一次建议稿与原文过于相似，只做了少量词语替换。本次必须重新梳理核心结论、论证顺序、经历证据与岗位匹配关系，在保留全部真实信息及专业术语的前提下产出结构明显更清晰的建议稿；不要只给评价，也不要继续沿用原文的段落组织。"
+            : "",
+          missingMarkerRequired(result)
+            ? "上一次结果提出了需要用户补充的问题，却没有按要求标注缺失内容。请删除所有替用户推测或编写的缺失答案，只保留原文已有事实，并在content末尾使用【待补充：具体缺失内容】标明缺口。"
+            : "",
+        ].join("");
+        result = polishSchema.parse(
           await generate(
-            "润色用户原文，保持事实、口吻和个人经历，不新增数字。返回 {content,feedback,questions:需要补充的事实问题数组}。",
-            {
-              input,
-              style: raw.style || "口语自然，表达清晰",
-              question: raw.question || "",
-            },
+            prompt + correction,
+            { ...payload, previousFeedback: result.feedback },
+            "polish",
           ),
         );
+      }
+      if (insufficient(result.content))
+        throw Error("模型没有生成实质性优化的建议稿，请补充信息后重新尝试");
+      if (missingMarkerRequired(result))
+        throw Error("模型尝试补写未提供的信息，请补充事实后重新润色");
       return Response.json(result);
     }
     if (action === "import") {
-      const result = z
-        .object({ items: z.array(item).max(100) })
-        .parse(
-          await generate(
-            "将原文拆为自我介绍和问题回答。逐字保留回答事实，不编写新回答。返回 {items:[{title,content,kind}]}。",
-            input,
-          ),
-        );
-      return Response.json(result);
+      const segments = splitInterviewMaterial(input);
+      if (!segments.length) throw Error("没有可拆分的文字内容");
+      const classificationSchema = z.object({
+        items: z.array(
+          z.object({
+            sourceIndex: z.number().int().min(0),
+            roleScope: z.string().default(""),
+            category: z.enum(materialCategories),
+            kind: z.enum(materialKinds),
+            title: z.string().min(1).max(200),
+            confidence: z.number().min(0).max(1),
+          }),
+        ),
+      });
+      const classifications: MaterialClassification[] = [];
+      const batches = importBatches(segments);
+      let nextBatch = 0;
+      const classifyNextBatch = async () => {
+        const batchIndex = nextBatch++;
+        const batch = batches[batchIndex];
+        if (!batch) return;
+        const payload = batch.map((segment) => ({
+          sourceIndex: segment.sourceIndex,
+          roleHint: segment.roleScope,
+          text: segment.content,
+        }));
+        let parsed: z.infer<typeof classificationSchema> | undefined;
+        for (let attempt = 0; attempt < 2 && !parsed; attempt++) {
+          try {
+            parsed = classificationSchema.parse(
+              await generate(
+                "你只负责给原文片段分类，不得省略、合并或拆分片段，也不要返回正文。每个sourceIndex必须恰好返回一次。category只能是岗位特有、通用问题、待确认。岗位特有的kind只能是自我介绍、求职动机、岗位相关专业问题与知识点、Case、其他；岗位职责、行业知识、工具、法规和专业问答都归入岗位相关专业问题与知识点；为什么选择某岗位、公司或行业属于求职动机；与岗位相关但不属于前述类别的内容归入其他。通用问题的kind只能是个性问题、行为面试、其他通用问题；其中优势短板、性格与个人偏好属于个性问题。通用问题的roleScope返回空字符串。无法确定时使用category=待确认、kind=边界或分类待确认。title优先使用原问题或原有版本标题。confidence为0到1。返回{items:[{sourceIndex,roleScope,category,kind,title,confidence}]}。",
+                payload,
+              ),
+            );
+            const expected = new Set(
+              batch.map((segment) => segment.sourceIndex),
+            );
+            if (
+              parsed.items.length !== batch.length ||
+              parsed.items.some((entry) => !expected.has(entry.sourceIndex))
+            )
+              throw Error("模型分类结果未覆盖当前批次");
+          } catch {
+            parsed = undefined;
+          }
+        }
+        if (parsed) classifications.push(...parsed.items);
+        await classifyNextBatch();
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(2, batches.length) }, classifyNextBatch),
+      );
+      return Response.json(mergeClassifications(segments, classifications));
     }
     if (action === "reuse") {
       const prep = await db.preparation.findFirst({
@@ -185,44 +276,18 @@ export async function POST(r: Request) {
         where: { id: raw.preparationId, ...w },
       });
       if (!prep) throw Error("面试准备不存在");
-      if (!process.env.SEARCH_API_KEY)
-        throw Error(
-          "联网搜索尚未配置。可先手动准备问题，配置后再调研真实来源。",
-        );
-      const url = new URL("https://api.search.brave.com/res/v1/web/search");
-      url.searchParams.set("q", `${prep.company} ${prep.role} 招聘 面试 面经`);
-      url.searchParams.set("count", "8");
-      url.searchParams.set("search_lang", "zh-hans");
-      const res = await fetch(url, {
-        headers: {
-          "X-Subscription-Token": process.env.SEARCH_API_KEY,
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(20000),
-      });
-      if (!res.ok) throw Error("搜索服务失败，请稍后重试");
-      const data = await res.json();
-      const sources = (data.web?.results || [])
-        .filter((x: { url: string }) => /^https?:\/\//.test(x.url))
-        .map(
-          (
-            x: {
-              title: string;
-              url: string;
-              description: string;
-              age?: string;
-            },
-            i: number,
-          ) => ({
-            id: `source-${i}`,
-            title: x.title,
-            url: x.url,
-            description: x.description,
-            published: x.age || "未知",
-            retrievedAt: new Date().toISOString(),
-            kind: "仅搜索摘要，未核实全文",
-          }),
-        );
+      const research = await searchWeb(
+        `${prep.company} ${prep.role} 招聘 面试 面经`,
+      );
+      const sources = research.sources.map((source, i) => ({
+        id: `source-${i}`,
+        title: source.title,
+        url: source.url,
+        description: "Grok 搜索引用，请打开来源核对全文。",
+        published: "未知",
+        retrievedAt: new Date().toISOString(),
+        kind: "联网引用，未核实全文",
+      }));
       const result = z
         .object({
           questions: z
@@ -239,7 +304,13 @@ export async function POST(r: Request) {
         .parse(
           await generate(
             "根据公司岗位JD和检索摘要出5道模拟面试题。返回 {questions:[{question,sourceIds,basis}]}。不能称为公司原题。只引用提供的source ID；没有证据则sourceIds为空且basis写明推测练习题。",
-            { company: prep.company, role: prep.role, jd: prep.jd, sources },
+            {
+              company: prep.company,
+              role: prep.role,
+              jd: prep.jd,
+              research: research.text,
+              sources,
+            },
           ),
         );
       if (
@@ -276,6 +347,7 @@ export async function POST(r: Request) {
           await generate(
             "针对问题和回答给出反馈，并润色为口语逐字稿，不能新增任何个人事实。返回 {content,feedback}。",
             { question: q, answer: turn.answer },
+            "polish",
           ),
         );
       turns[index] = {

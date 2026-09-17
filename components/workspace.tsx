@@ -14,6 +14,8 @@ import {
   ArrowRight,
   X,
   Notebook,
+  SpeakerHigh,
+  SpeakerSlash,
 } from "@phosphor-icons/react";
 import { Context, api } from "./context";
 import type { Data } from "@/lib/types";
@@ -25,6 +27,7 @@ import Preparations from "./preparations";
 import Settings from "./settings";
 import Assistant from "./assistant";
 import { EventForm } from "./forms";
+import { usePageSound } from "./use-page-sound";
 const tabs = [
   { id: "today", label: "今日", en: "Today", icon: House },
   { id: "calendar", label: "日历", en: "Calendar", icon: CalendarBlank },
@@ -40,6 +43,7 @@ export default function Workspace({ demo }: { demo: boolean }) {
   const [newEvent, setNewEvent] = useState(false);
   const [mobileFiles, setMobileFiles] = useState(false);
   const router = useRouter();
+  const pageSound = usePageSound();
   const refresh = useCallback(async () => {
     const r = await fetch("/api/data", { cache: "no-store" });
     if (r.status === 401) {
@@ -72,6 +76,7 @@ export default function Workspace({ demo }: { demo: boolean }) {
     return () => clearTimeout(t);
   }, [toast]);
   const navigate = (v: string) => {
+    if (v !== view) pageSound.play();
     setView(v);
     window.history.pushState(null, "", "/?view=" + v);
     setMobileFiles(false);
@@ -122,6 +127,19 @@ export default function Workspace({ demo }: { demo: boolean }) {
           </button>
           <div className="header-right">
             {demo && <span className="demo-label">示例手账</span>}
+            <button
+              className="icon-button"
+              aria-label="栏目切换音效"
+              aria-pressed={pageSound.enabled}
+              title={pageSound.enabled ? "关闭翻页音效" : "开启翻页音效"}
+              onClick={pageSound.toggle}
+            >
+              {pageSound.enabled ? (
+                <SpeakerHigh size={21} />
+              ) : (
+                <SpeakerSlash size={21} />
+              )}
+            </button>
             <button
               className="icon-button"
               aria-label="偏好设置"

@@ -1,8 +1,10 @@
 "use client";
+import { useState } from "react";
 import type { Application, Event, Material, Prep } from "@/lib/types";
 import { kinds, stages, outcomes } from "@/lib/types";
 import { useWorkspace, inputDate, iso } from "./context";
 import { Modal, Form, Field } from "./ui";
+import { materialKindsForCategory } from "@/lib/material-import";
 const val = (f: FormData, key: string) => String(f.get(key) || "");
 export function ApplicationForm({
   item,
@@ -437,7 +439,12 @@ export function MaterialForm({
   prepId?: string;
   onClose: () => void;
 }) {
-  const { mutate } = useWorkspace();
+  const { data, mutate } = useWorkspace();
+  const [category, setCategory] = useState(item?.category || "待确认");
+  const kindOptions = materialKindsForCategory(category);
+  const [kind, setKind] = useState(
+    item?.kind && kindOptions.includes(item.kind) ? item.kind : kindOptions[0],
+  );
   return (
     <Modal
       title={item?.id ? "编辑准备资料" : "添加准备资料"}
@@ -454,7 +461,9 @@ export function MaterialForm({
             values: {
               title: val(f, "title"),
               content: val(f, "content"),
+              category: val(f, "category"),
               kind: val(f, "kind"),
+              roleScope: val(f, "roleScope"),
               tags: val(f, "tags"),
               preparationId: prepId || item?.preparationId || null,
               parentId: item?.parentId || null,
@@ -467,19 +476,51 @@ export function MaterialForm({
           <Field label="标题 / 面试问题">
             <input required name="title" defaultValue={item?.title} />
           </Field>
-          <Field label="分类">
-            <select name="kind" defaultValue={item?.kind || "问题回答"}>
-              {[
-                "自我介绍",
-                "问题回答",
-                "项目经历",
-                "行为问题",
-                "岗位专业问题",
-                "其他",
-              ].map((k) => (
+          <Field label="一级类目">
+            <select
+              name="category"
+              value={category}
+              onChange={(event) => {
+                const next = event.target.value;
+                setCategory(next);
+                const nextKinds = materialKindsForCategory(next);
+                if (!nextKinds.includes(kind)) setKind(nextKinds[0]);
+              }}
+            >
+              {["岗位特有", "通用问题", "待确认"].map((k) => (
                 <option key={k}>{k}</option>
               ))}
             </select>
+          </Field>
+          <Field label="二级类目">
+            <select
+              name="kind"
+              value={kind}
+              onChange={(event) => setKind(event.target.value)}
+            >
+              {kindOptions.map((k) => (
+                <option key={k}>{k}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="适用岗位">
+            <input
+              name="roleScope"
+              list="material-role-options"
+              required={category === "岗位特有"}
+              disabled={category === "通用问题"}
+              defaultValue={item?.roleScope}
+              placeholder={
+                category === "岗位特有"
+                  ? "例如：私募基金运营"
+                  : "通用问题不需要填写"
+              }
+            />
+            <datalist id="material-role-options">
+              {(data.materialRoles || []).map((role) => (
+                <option key={role.id} value={role.name} />
+              ))}
+            </datalist>
           </Field>
         </div>
         <Field label="逐字稿 / 正文">

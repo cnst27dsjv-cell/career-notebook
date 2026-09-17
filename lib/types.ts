@@ -55,7 +55,9 @@ export type Material = {
   id: string;
   preparationId: string | null;
   title: string;
+  category: string;
   kind: string;
+  roleScope: string;
   content: string;
   tags: string;
   source: string;
@@ -94,6 +96,7 @@ export type Data = {
   resumes: Resume[];
   preparations: Prep[];
   materials: Material[];
+  materialRoles: { id: string; name: string }[];
   interviews: Interview[];
   files: { id: string; name: string; size: number }[];
   settings: {
@@ -112,6 +115,9 @@ export type Data = {
   services: {
     model: boolean;
     search: boolean;
+    generalModel: string;
+    polishModel: string;
+    searchModel: string;
     mailMode: string;
     worker: string | null;
   };

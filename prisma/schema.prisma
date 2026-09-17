@@ -148,7 +148,9 @@ model Material {
   userId String
   preparationId String?
   title String
+  category String @default("待确认")
   kind String @default("问题回答")
+  roleScope String @default("")
   content String
   tags String @default("")
   source String @default("手动整理")
@@ -159,6 +161,14 @@ model Material {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([userId,preparationId])
+}
+model MaterialRole {
+  id String @id @default(cuid())
+  userId String
+  name String
+  createdAt DateTime @default(now())
+  @@unique([userId,name])
+  @@index([userId])
 }
 model Interview {
   id String @id @default(cuid())

@@ -1,15 +1,66 @@
 # 求职手账 · Career Notebook
 
-一个参考复古纸质手账设计的个人求职工作台。Next.js + PostgreSQL，支持今日安排、日历、投递筛选、简历版本、面试资料和助理接口。
+一个参考复古纸质手账设计的个人求职工作台。项目基于 Next.js、PostgreSQL 和 Prisma，支持日程提醒、投递管理、简历版本、面试资料库、AI 助理及带来源的联网调研。
 
-## 直接使用
+## 功能概览
 
-当前电脑已完成依赖安装、数据库初始化和示例数据建立。
+- 今日安排、日历、截止与逾期提醒
+- 按公司、城市、岗位、批次、阶段和状态筛选投递
+- 简历系列、版本、归档及投递版本关联
+- 按岗位组织的面试资料库、DOCX 导入和 AI 分类
+- 面试回答润色、模拟面试及确认后入库
+- 可选的 AI 模型与联网搜索；没有 API Key 时仍可使用全部手动管理功能
 
-- 打开 http://127.0.0.1:3040 。
-- 可以先进入示例手账，或点击“第一次使用？创建我的空白手账”。个人账号与示例记录隔离。
-- 以后双击项目根目录的 `启动求职手账.command`，会启动本项目数据库、网页和提醒进程。
-- 本地测试邮件在 http://localhost:8026 查看；当前不会向真实 QQ 邮箱发信。
+## 本地启动
+
+需要 Node.js、Docker 与 Docker Compose。
+
+```sh
+cp .env.example .env
+npm ci
+docker compose up -d
+npx prisma migrate deploy
+npm run db:seed
+npm run dev
+```
+
+另开一个终端运行提醒进程：
+
+```sh
+npm run worker
+```
+
+网页地址为 http://127.0.0.1:3040，本地测试邮件可在 http://127.0.0.1:8026 查看。macOS 用户完成首次安装后也可以双击 `启动求职手账.command`。
+
+## 自行配置 AI
+
+AI 配置只保存在服务器端的 `.env`，不会进入浏览器代码。仓库忽略所有 `.env` 文件，只保留不含密钥的示例文件。Fork 后可自行选择兼容 OpenAI API 的服务商和模型：
+
+```env
+MODEL_BASE_URL="https://your-openai-compatible-provider.example/v1"
+MODEL_API_KEY="your-private-api-key"
+MODEL_NAME="your-general-model"
+MODEL_POLISH_NAME="your-polish-model"
+MODEL_SEARCH_NAME=""
+```
+
+- `MODEL_NAME` 用于资料分类、信息提取和普通助理任务。
+- `MODEL_POLISH_NAME` 用于中文润色和模拟面试反馈；留空时使用通用模型。
+- `MODEL_SEARCH_NAME` 用于联网调研。只有服务商支持 Responses API 的 `web_search` 工具时才填写；不支持时留空，手动资料入口仍可使用。
+- 修改配置后重启网页和 worker，再在设置页执行连接测试。
+
+不要把真实密钥写入源码、截图、Issue 或提交记录。如果密钥曾被提交过，应立即在服务商后台撤销并重新生成。
+
+## 验证
+
+```sh
+npm run typecheck
+npm test
+npm run build
+npx tsx --env-file=.env scripts/integration-check.ts
+```
+
+集成脚本要求网页、数据库、Mailpit 和 worker 正在运行。`flows-check.ts` 包含首次开户验收，只适用于没有个人账号的独立测试库，不要在已经使用的数据库上运行。
 
 ## 文档
 
@@ -19,29 +70,6 @@
 - [技术架构](03_交付物/02_技术架构.md)
 - [分阶段计划](03_交付物/03_搭建计划.md)
 
-## 开发
-
-```sh
-npm ci
-docker compose up -d
-npx prisma migrate deploy
-npm run dev
-# 在另一个终端保持提醒进程运行
-npm run worker
-```
-
-首次安装需参考 `.env.example` 建立 `.env`，配置数据库及随机认证 secret。可运行 `npm run db:seed` 创建独立示例账号，脚本不会覆盖已存在的示例记录。
-
-```sh
-npm run typecheck
-npm test
-npm run build
-npx tsx --env-file=.env scripts/integration-check.ts
-npx tsx --env-file=.env scripts/flows-check.ts
-```
-
-浏览器验收脚本使用本机 Chrome；集成脚本需要网页与提醒服务正在运行。flows-check 包含首次开户验收，仅适用于尚无个人账号的测试环境，会清理自身创建的临时账号。不要对已开始真实使用的生产库运行测试脚本。
-
 ## 当前边界
 
-这是本地可运行首版，尚未部署到公网。手机页面布局已验收，但要在任意网络访问并在电脑关闭后持续发信，需要部署到常驻服务器。模型、搜索、真实 SMTP 凭据尚未配置；对应接口有真实接入实现，但未完成外部服务联调。QQ 自动收信与微信推送属于后续阶段。
+项目目前完成本地可运行首版。真实 SMTP、公网部署、跨网络手机访问和电脑关机后的持续提醒仍需部署环境支持。QQ 邮箱自动收信与微信推送属于后续阶段。

@@ -188,10 +188,19 @@ try {
       {
         title: "自我介绍",
         content: "这是我的真实经历",
+        category: "岗位特有",
         kind: "自我介绍",
+        roleScope: "产品经理",
         preparationId: prep.id,
       },
-      { title: "项目介绍", content: "我负责整理需求", kind: "项目经历" },
+      {
+        title: "项目介绍",
+        content: "我负责整理需求",
+        category: "岗位特有",
+        kind: "其他",
+        roleScope: "产品经理",
+        preparationId: prep.id,
+      },
     ],
   };
   await post(payload);

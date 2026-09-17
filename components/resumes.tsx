@@ -104,17 +104,27 @@ export default function Resumes() {
                   </button>
                 )}
                 {!r.archived && (
-                  <button
-                    className="icon-button"
-                    aria-label={"归档 " + r.series + " v" + r.number}
-                    onClick={() =>
-                      mutate({ action: "resume.archive", id: r.id }).catch(
-                        (e) => notify(e.message),
-                      )
-                    }
-                  >
-                    <Archive size={17} />
-                  </button>
+                  <span className="archive-action">
+                    <button
+                      className="icon-button"
+                      aria-label={"归档 " + r.series + " v" + r.number}
+                      aria-describedby={"archive-tip-" + r.id}
+                      onClick={() =>
+                        mutate({ action: "resume.archive", id: r.id }).catch(
+                          (e) => notify(e.message),
+                        )
+                      }
+                    >
+                      <Archive size={17} />
+                    </button>
+                    <span
+                      className="archive-tooltip"
+                      id={"archive-tip-" + r.id}
+                      role="tooltip"
+                    >
+                      归档
+                    </span>
+                  </span>
                 )}
               </div>
             </article>
