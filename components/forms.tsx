@@ -36,6 +36,7 @@ export function ApplicationForm({
               outcome: val(f, "outcome"),
               appliedAt: iso(f.get("appliedAt")),
               url: val(f, "url"),
+              jd: val(f, "jd"),
               notes: val(f, "notes"),
               resumeId: val(f, "resumeId") || null,
             },
@@ -122,6 +123,14 @@ export function ApplicationForm({
             name="url"
             defaultValue={item?.url}
             placeholder="https://…"
+          />
+        </Field>
+        <Field label="岗位描述（JD）">
+          <textarea
+            name="jd"
+            defaultValue={item?.jd}
+            rows={6}
+            placeholder="粘贴完整岗位职责、任职要求与加分项……"
           />
         </Field>
         <Field label="备注与下一步">

@@ -67,6 +67,7 @@ model Application {
   outcome String @default("")
   appliedAt DateTime?
   url String @default("")
+  jd String @default("")
   notes String @default("")
   resumeId String?
   version Int @default(1)

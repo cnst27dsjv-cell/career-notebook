@@ -9,6 +9,7 @@ export type Application = {
   outcome: string;
   appliedAt: string | null;
   url: string;
+  jd: string;
   notes: string;
   resumeId: string | null;
   version: number;

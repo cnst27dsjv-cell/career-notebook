@@ -24,6 +24,7 @@ const appSchema = z.object({
   url: text
     .refine((v) => !v || /^https?:\/\//.test(v), "链接应以 http 或 https 开头")
     .default(""),
+  jd: text.default(""),
   notes: text.default(""),
   resumeId: z.string().nullable().optional(),
 });

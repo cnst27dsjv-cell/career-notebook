@@ -19,7 +19,16 @@ export async function GET(r: Request) {
       const csv =
         "\uFEFF" +
         [
-          ["公司", "岗位", "城市", "批次", "阶段", "阶段状态", "投递时间"],
+          [
+            "公司",
+            "岗位",
+            "城市",
+            "批次",
+            "阶段",
+            "阶段状态",
+            "投递时间",
+            "岗位描述（JD）",
+          ],
           ...applications.map((a) => [
             a.company,
             a.role,
@@ -28,6 +37,7 @@ export async function GET(r: Request) {
             a.stage,
             a.stageStatus,
             a.appliedAt?.toISOString(),
+            a.jd,
           ]),
         ]
           .map((row) => row.map(safe).join(","))

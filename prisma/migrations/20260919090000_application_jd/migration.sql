@@ -1,0 +1,1 @@
+ALTER TABLE "Application" ADD COLUMN "jd" TEXT NOT NULL DEFAULT '';
