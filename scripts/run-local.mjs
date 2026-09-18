@@ -35,7 +35,8 @@ if (!running) {
   child.unref();
 }
 const { PrismaClient } = await import("@prisma/client");
-const db = new PrismaClient();
+const { PrismaPg } = await import("@prisma/adapter-pg");
+const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 const heartbeat = await db.heartbeat.findUnique({ where: { id: "reminders" } });
 await db.$disconnect();
 if (!heartbeat || Date.now() - heartbeat.updatedAt.getTime() > 120000) {

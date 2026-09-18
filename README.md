@@ -70,6 +70,10 @@ npx tsx --env-file=.env scripts/integration-check.ts
 - [技术架构](03_交付物/02_技术架构.md)
 - [分阶段计划](03_交付物/03_搭建计划.md)
 
+## Cloudflare 部署
+
+已提供 Workers + Supabase PostgreSQL + R2 的部署路径，详见[Cloudflare 与 Supabase 部署说明](03_交付物/06_Cloudflare与Supabase部署.md)。云端需要自行创建数据库、私有文件桶并配置密钥。
+
 ## 当前边界
 
 项目目前完成本地可运行首版。真实 SMTP、公网部署、跨网络手机访问和电脑关机后的持续提醒仍需部署环境支持。QQ 邮箱自动收信与微信推送属于后续阶段。

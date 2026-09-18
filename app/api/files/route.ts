@@ -1,10 +1,10 @@
 import { db } from "@/lib/db";
 import { userFor, failure } from "@/lib/http";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, writeFile, unlink } from "node:fs/promises";
+import { storage } from "@/lib/runtime-storage";
+import { extractDocument } from "@/lib/extract";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+
 export async function POST(r: Request) {
   let saved = "";
   try {
@@ -24,24 +24,12 @@ export async function POST(r: Request) {
     if (ext === ".docx" && buffer.subarray(0, 2).toString() !== "PK")
       throw Error("DOCX 文件格式无效");
     const key = randomUUID() + ext;
-    await mkdir(path.resolve("storage"), { recursive: true });
-    saved = path.resolve("storage", key);
-    await writeFile(saved, buffer, { mode: 0o600 });
     if (form.get("mode") === "import") {
       if (ext !== ".docx") throw Error("面试资料导入支持 DOCX，或直接粘贴文字");
-      const result = await promisify(execFile)(
-        process.execPath,
-        [
-          "--max-old-space-size=256",
-          path.resolve("scripts/extract.cjs"),
-          saved,
-        ],
-        { timeout: 30000, maxBuffer: 1000000 },
-      );
-      await unlink(saved);
-      saved = "";
-      return Response.json({ text: result.stdout, name: file.name });
+      return Response.json({ text: await extractDocument(buffer), name: file.name });
     }
+    await storage().put(key, buffer);
+    saved = key;
     const series = String(form.get("series") || "").trim();
     if (!series) throw Error("请填写简历系列名称");
     const hash = createHash("sha256").update(buffer).digest("hex");
@@ -88,7 +76,7 @@ export async function POST(r: Request) {
     saved = "";
     return Response.json({ ok: true, id: resume.id });
   } catch (e) {
-    if (saved) await unlink(saved).catch(() => {});
+    if (saved) await storage().delete(saved).catch(() => {});
     return failure(e);
   }
 }

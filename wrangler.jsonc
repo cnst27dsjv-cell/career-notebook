@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "career-notebook",
+  "compatibility_date": "2026-09-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "cloudflare/worker.ts",
+  "assets": {
+    "directory": "dist/client",
+    "not_found_handling": "none",
+    "binding": "ASSETS",
+  },
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "career-notebook-files",
+    },
+  ],
+  "triggers": {
+    "crons": ["* * * * *"],
+  },
+  "vars": {
+    "LOCAL_DEMO": "false",
+  },
+}

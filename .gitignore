@@ -9,3 +9,9 @@ storage/*
 *.tsbuildinfo
 playwright-report/
 test-results/
+/dist/
+.vinext/
+.wrangler/
+
+.dev.vars
+.dev.vars.*

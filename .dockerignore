@@ -6,3 +6,8 @@ node_modules
 storage
 06_临时文件
 04_素材
+
+.dev.vars
+.dev.vars.*
+.wrangler
+dist

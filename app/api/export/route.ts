@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { userFor, failure } from "@/lib/http";
 import archiver from "archiver";
 import path from "node:path";
+import { storage } from "@/lib/runtime-storage";
 import { PassThrough, Readable } from "node:stream";
 export async function GET(r: Request) {
   try {
@@ -69,7 +70,7 @@ export async function GET(r: Request) {
       archive.pipe(stream);
       archive.append(json, { name: "data.json" });
       for (const f of files)
-        archive.file(path.resolve("storage", f.key), {
+        archive.append(await storage().get(f.key), {
           name: `files/${f.id}-${path.basename(f.name)}`,
         });
       void archive.finalize();
