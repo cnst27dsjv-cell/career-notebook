@@ -12,9 +12,11 @@
     "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit",
     "dev:vinext": "vinext dev --port 3001",
-    "build:vinext": "vinext build",
+    "build:vinext": "vinext build && node scripts/sanitize-vinext-build.mjs",
     "start:vinext": "wrangler dev --config dist/server/wrangler.json",
-    "deploy:vinext": "vinext-cloudflare deploy --config dist/server/wrangler.json"
+    "deploy:vinext": "vinext-cloudflare deploy --config dist/server/wrangler.json",
+    "configure:cloud-db": "node scripts/configure-cloud-database.mjs",
+    "migrate:cloud-data": "node scripts/migrate-personal-to-cloud.mjs"
   },
   "dependencies": {
     "@fontsource/cormorant-garamond": "^5.2.0",

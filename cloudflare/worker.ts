@@ -21,8 +21,10 @@ export default {
     return run(env, () => handler.fetch(request, env, ctx));
   },
   scheduled(_event: unknown, env: Env) {
-    if (process.env.MAIL_MODE !== "live" || !process.env.RESEND_API_KEY)
-      throw new Error("请先配置云端邮件服务，再启用提醒扫描");
+    if (process.env.MAIL_MODE !== "live" || !process.env.RESEND_API_KEY) {
+      console.warn("云端邮件服务尚未配置，本次提醒扫描已跳过");
+      return Promise.resolve();
+    }
     return run(env, () => tick());
   },
 };
