@@ -12,6 +12,7 @@ test-results/
 /dist/
 .vinext/
 .wrangler/
+.superpowers/
 
 .dev.vars
 .dev.vars.*
