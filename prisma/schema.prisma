@@ -112,12 +112,17 @@ model NotificationJob {
 model FileAsset {
   id String @id @default(cuid())
   userId String
+  applicationId String?
+  purpose String @default("resume")
+  sortOrder Int @default(0)
   name String
   mime String
   size Int
   key String @unique
   hash String
   createdAt DateTime @default(now())
+  @@unique([userId,applicationId,purpose,hash])
+  @@index([userId,applicationId,purpose])
 }
 model Resume {
   id String @id @default(cuid())

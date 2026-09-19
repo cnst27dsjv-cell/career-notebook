@@ -99,7 +99,15 @@ export type Data = {
   materials: Material[];
   materialRoles: { id: string; name: string }[];
   interviews: Interview[];
-  files: { id: string; name: string; size: number }[];
+  files: {
+    id: string;
+    applicationId: string | null;
+    purpose: string;
+    sortOrder: number;
+    name: string;
+    mime: string;
+    size: number;
+  }[];
   settings: {
     email: string;
     emailVerified: boolean;

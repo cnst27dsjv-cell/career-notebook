@@ -38,11 +38,13 @@ export function Form({
   onSubmit,
   submit = "保存",
   onClose,
+  disabled = false,
 }: {
   children: React.ReactNode;
   onSubmit: (f: FormData) => Promise<void>;
   submit?: string;
   onClose?: () => void;
+  disabled?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -75,7 +77,7 @@ export function Form({
             取消
           </button>
         )}
-        <button className="primary" disabled={busy}>
+        <button className="primary" disabled={busy || disabled}>
           {busy ? "正在保存…" : submit}
         </button>
       </div>

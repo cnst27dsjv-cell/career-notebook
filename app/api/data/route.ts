@@ -128,7 +128,15 @@ export async function GET(request: Request) {
       db.interview.findMany({ where: w, orderBy: { updatedAt: "desc" } }),
       db.fileAsset.findMany({
         where: w,
-        select: { id: true, name: true, size: true },
+        select: {
+          id: true,
+          applicationId: true,
+          purpose: true,
+          sortOrder: true,
+          name: true,
+          mime: true,
+          size: true,
+        },
       }),
       db.settings.upsert({
         where: { userId: user.id },
@@ -223,8 +231,13 @@ export async function POST(request: Request) {
           });
           if (changed.count !== 1) throw new Error("版本冲突，请刷新");
         });
-      } else
-        await db.application.create({
+        return Response.json({
+          ok: true,
+          id,
+          version: Number(raw.version) + 1,
+        });
+      } else {
+        const application = await db.application.create({
           data: {
             ...values,
             ...w,
@@ -233,6 +246,12 @@ export async function POST(request: Request) {
             ],
           },
         });
+        return Response.json({
+          ok: true,
+          id: application.id,
+          version: application.version,
+        });
+      }
     } else if (action === "event.save") {
       const values = eventSchema.parse(raw.values);
       if (values.absoluteReminders.some((d) => d <= new Date()))

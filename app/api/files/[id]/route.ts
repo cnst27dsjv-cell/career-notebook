@@ -14,7 +14,7 @@ export async function GET(
     return new Response(data, {
       headers: {
         "Content-Type": f.mime,
-        "Content-Disposition": `${f.mime === "application/pdf" && new URL(r.url).searchParams.get("preview") === "1" ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(f.name)}`,
+        "Content-Disposition": `${(f.mime === "application/pdf" && new URL(r.url).searchParams.get("preview") === "1") || f.mime.startsWith("image/") ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(f.name)}`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
       },

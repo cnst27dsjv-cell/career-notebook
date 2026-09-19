@@ -1,10 +1,15 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Application, Event, Material, Prep } from "@/lib/types";
 import { kinds, stages, outcomes } from "@/lib/types";
-import { useWorkspace, inputDate, iso } from "./context";
+import { api, useWorkspace, inputDate, iso } from "./context";
 import { Modal, Form, Field } from "./ui";
 import { materialKindsForCategory } from "@/lib/material-import";
+import {
+  ApplicationImageImport,
+  type ApplicationImageFields,
+  type PendingApplicationImage,
+} from "./application-image-import";
 const val = (f: FormData, key: string) => String(f.get(key) || "");
 export function ApplicationForm({
   item,
@@ -13,42 +18,219 @@ export function ApplicationForm({
   item?: Application;
   onClose: () => void;
 }) {
-  const { data, mutate } = useWorkspace();
+  const { data, refresh } = useWorkspace();
+  const [draft, setDraft] = useState<ApplicationImageFields>({
+    company: item?.company || "",
+    role: item?.role || "",
+    city: item?.city || "",
+    batch: item?.batch || "2027 届秋招",
+    url: item?.url || "",
+    jd: item?.jd || "",
+  });
+  const [images, setImages] = useState<PendingApplicationImage[]>([]);
+  const [conflicts, setConflicts] = useState<
+    {
+      field: keyof ApplicationImageFields;
+      current: string;
+      suggested: string;
+    }[]
+  >([]);
+  const [highlighted, setHighlighted] = useState<
+    (keyof ApplicationImageFields)[]
+  >([]);
+  const [recognizing, setRecognizing] = useState(false);
+  const [persisted, setPersisted] = useState<{ id: string; version: number }>();
+  const labels: Record<keyof ApplicationImageFields, string> = {
+    company: "公司",
+    role: "岗位",
+    city: "城市",
+    batch: "招聘批次",
+    url: "职位链接",
+    jd: "岗位描述（JD）",
+  };
+  const existingImages = data.files
+    .filter(
+      (file) =>
+        file.applicationId === (persisted?.id || item?.id) &&
+        file.purpose === "application-image",
+    )
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  useEffect(() => {
+    if (!highlighted.length) return;
+    const timer = setTimeout(() => setHighlighted([]), 2800);
+    return () => clearTimeout(timer);
+  }, [highlighted]);
+  const field = (name: keyof ApplicationImageFields) => ({
+    value: draft[name],
+    onChange: (
+      event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    ) => setDraft((current) => ({ ...current, [name]: event.target.value })),
+    className: highlighted.includes(name) ? "ai-filled" : undefined,
+  });
+  const applyRecognition = ({ fields }: { fields: ApplicationImageFields }) => {
+    const next = { ...draft };
+    const filled: (keyof ApplicationImageFields)[] = [];
+    const clashes: typeof conflicts = [];
+    (Object.keys(fields) as (keyof ApplicationImageFields)[]).forEach(
+      (name) => {
+        const suggested = fields[name].trim();
+        if (!suggested || suggested === draft[name].trim()) return;
+        if (draft[name].trim())
+          clashes.push({ field: name, current: draft[name], suggested });
+        else {
+          next[name] = suggested;
+          filled.push(name);
+        }
+      },
+    );
+    setDraft(next);
+    setHighlighted(filled);
+    setConflicts(clashes);
+  };
   return (
     <Modal
       title={item ? "投递详情 · " + item.company : "记录一份新机会"}
       onClose={onClose}
+      wide
     >
       <Form
         onClose={onClose}
-        onSubmit={async (f) =>
-          mutate({
+        disabled={recognizing}
+        onSubmit={async (f) => {
+          const saved = (await api("/api/data", {
             action: "application.save",
-            id: item?.id,
-            version: item?.version,
+            id: persisted?.id || item?.id,
+            version: persisted?.version ?? item?.version,
             values: {
-              company: val(f, "company"),
-              role: val(f, "role"),
-              city: val(f, "city"),
-              batch: val(f, "batch"),
+              company: draft.company,
+              role: draft.role,
+              city: draft.city,
+              batch: draft.batch,
               stage: val(f, "stage"),
               stageStatus: val(f, "stageStatus"),
               outcome: val(f, "outcome"),
               appliedAt: iso(f.get("appliedAt")),
-              url: val(f, "url"),
-              jd: val(f, "jd"),
+              url: draft.url,
+              jd: draft.jd,
               notes: val(f, "notes"),
               resumeId: val(f, "resumeId") || null,
             },
-          })
-        }
+          })) as { id: string; version: number };
+          setPersisted(saved);
+          const pending = images.filter((image) => image.status !== "uploaded");
+          const results = await Promise.allSettled(
+            pending.map(async (image, index) => {
+              const upload = new FormData();
+              upload.set("applicationId", saved.id);
+              upload.set("sortOrder", String(existingImages.length + index));
+              upload.set("clientId", image.clientId);
+              upload.set("file", image.file);
+              const response = await fetch("/api/application-images", {
+                method: "POST",
+                body: upload,
+              });
+              const result = await response.json();
+              if (!response.ok)
+                throw Error(result.error || `${image.file.name} 上传失败`);
+              return { clientId: image.clientId, id: String(result.id) };
+            }),
+          );
+          const uploaded = new Map(
+            results
+              .filter(
+                (
+                  result,
+                ): result is PromiseFulfilledResult<{
+                  clientId: string;
+                  id: string;
+                }> => result.status === "fulfilled",
+              )
+              .map((result) => [result.value.clientId, result.value.id]),
+          );
+          images
+            .filter((image) => uploaded.has(image.clientId))
+            .forEach((image) => URL.revokeObjectURL(image.preview));
+          setImages((current) =>
+            current.flatMap((image) =>
+              uploaded.has(image.clientId)
+                ? []
+                : pending.some(
+                      (candidate) => candidate.clientId === image.clientId,
+                    )
+                  ? [{ ...image, status: "failed" as const }]
+                  : [image],
+            ),
+          );
+          const failed = results.find((result) => result.status === "rejected");
+          await refresh();
+          if (failed?.status === "rejected")
+            throw failed.reason instanceof Error
+              ? failed.reason
+              : Error("部分图片上传失败，请重试");
+        }}
       >
+        <ApplicationImageImport
+          images={images}
+          existing={existingImages}
+          onChange={setImages}
+          onRecognized={applyRecognition}
+          onBusyChange={setRecognizing}
+          onDeleteExisting={async (id) => {
+            const response = await fetch(`/api/application-images/${id}`, {
+              method: "DELETE",
+            });
+            const result = await response.json();
+            if (!response.ok) throw Error(result.error || "删除图片失败");
+            await refresh();
+          }}
+        />
+        {conflicts.length > 0 && (
+          <section className="recognition-conflicts">
+            <strong>这些字段已有内容，请选择是否采用识别结果</strong>
+            {conflicts.map((conflict) => (
+              <article key={conflict.field}>
+                <div>
+                  <b>{labels[conflict.field]}</b>
+                  <span>当前：{conflict.current}</span>
+                  <span>识别：{conflict.suggested}</span>
+                </div>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    setDraft((current) => ({
+                      ...current,
+                      [conflict.field]: conflict.suggested,
+                    }));
+                    setHighlighted((current) => [...current, conflict.field]);
+                    setConflicts((current) =>
+                      current.filter((item) => item.field !== conflict.field),
+                    );
+                  }}
+                >
+                  采用识别结果
+                </button>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() =>
+                    setConflicts((current) =>
+                      current.filter((item) => item.field !== conflict.field),
+                    )
+                  }
+                >
+                  保留当前内容
+                </button>
+              </article>
+            ))}
+          </section>
+        )}
         <div className="form-grid">
           <Field label="公司">
             <input
               required
               name="company"
-              defaultValue={item?.company}
+              {...field("company")}
               placeholder="例如：字节跳动"
             />
           </Field>
@@ -56,23 +238,15 @@ export function ApplicationForm({
             <input
               required
               name="role"
-              defaultValue={item?.role}
+              {...field("role")}
               placeholder="例如：产品经理"
             />
           </Field>
           <Field label="城市">
-            <input
-              name="city"
-              defaultValue={item?.city}
-              placeholder="例如：上海"
-            />
+            <input name="city" {...field("city")} placeholder="例如：上海" />
           </Field>
           <Field label="招聘批次">
-            <input
-              required
-              name="batch"
-              defaultValue={item?.batch || "2027 届秋招"}
-            />
+            <input required name="batch" {...field("batch")} />
           </Field>
           <Field label="当前阶段">
             <select name="stage" defaultValue={item?.stage || "待投递"}>
@@ -121,14 +295,14 @@ export function ApplicationForm({
           <input
             type="url"
             name="url"
-            defaultValue={item?.url}
+            {...field("url")}
             placeholder="https://…"
           />
         </Field>
         <Field label="岗位描述（JD）">
           <textarea
             name="jd"
-            defaultValue={item?.jd}
+            {...field("jd")}
             rows={6}
             placeholder="粘贴完整岗位职责、任职要求与加分项……"
           />

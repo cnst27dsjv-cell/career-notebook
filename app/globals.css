@@ -1835,6 +1835,180 @@ small {
   grid-template-columns: 1fr 1fr;
   gap: 0 17px;
 }
+.application-image-import {
+  margin-bottom: 20px;
+  padding: 18px;
+  border: 1px solid #cdbb9e;
+  border-radius: 5px;
+  background:
+    linear-gradient(135deg, #fffaf080, #f1e4ce66),
+    repeating-linear-gradient(0deg, transparent 0 25px, #9b263608 26px);
+}
+.application-image-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.application-image-heading h3 {
+  margin: 3px 0 4px;
+  font-family: var(--serif);
+  font-size: 18px;
+  color: var(--ink);
+}
+.application-image-heading p,
+.application-image-actions span {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.application-image-heading .eyebrow {
+  color: var(--wine);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.17em;
+}
+.image-picker {
+  position: relative;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+.image-picker input,
+.application-image-drop input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.application-image-drop {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  margin-top: 15px;
+  padding: 22px;
+  border: 1px dashed #9b2636aa;
+  border-radius: 5px;
+  background: #fffaf0b8;
+  color: var(--wine);
+  cursor: pointer;
+}
+.application-image-drop span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.application-image-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(106px, 1fr));
+  gap: 10px;
+  margin-top: 15px;
+}
+.application-image-card {
+  position: relative;
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--page);
+}
+.application-image-card.failed {
+  border-color: #a22131;
+}
+.application-image-card img {
+  display: block;
+  width: 100%;
+  height: 92px;
+  object-fit: cover;
+  border-radius: 2px;
+  background: #e9dcc7;
+}
+.application-image-card > span {
+  display: block;
+  padding: 5px 2px 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.application-image-card > div {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  display: flex;
+  gap: 3px;
+}
+.application-image-card button,
+.application-image-card a {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #c8b598;
+  border-radius: 50%;
+  background: #fffaf0e8;
+  color: var(--ink);
+}
+.application-image-card button:disabled {
+  opacity: 0.35;
+}
+.application-image-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+.recognition-notes,
+.recognition-conflicts {
+  margin-top: 14px;
+  padding: 11px 13px;
+  border-left: 3px solid #b88b45;
+  background: #b88b4510;
+  font-size: 11px;
+}
+.recognition-notes p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+.recognition-conflicts > strong {
+  display: block;
+  margin-bottom: 7px;
+}
+.recognition-conflicts article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+.recognition-conflicts article > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.recognition-conflicts article span {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-filled {
+  border-color: #b88b45 !important;
+  box-shadow: 0 0 0 2px #b88b4525;
+  animation: ai-field-flash 1.2s ease-out;
+}
+@keyframes ai-field-flash {
+  from {
+    background: #f3e5c8;
+  }
+  to {
+    background: var(--page);
+  }
+}
 .form-footer {
   display: flex;
   justify-content: flex-end;
@@ -2579,6 +2753,23 @@ small {
   .form-grid {
     grid-template-columns: 1fr;
     gap: 0;
+  }
+  .application-image-import {
+    padding: 14px;
+  }
+  .application-image-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .application-image-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .recognition-conflicts article {
+    grid-template-columns: 1fr;
+  }
+  .recognition-conflicts article .secondary,
+  .recognition-conflicts article .text-button {
+    width: 100%;
   }
   .checks {
     gap: 13px;
