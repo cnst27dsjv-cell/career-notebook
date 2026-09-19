@@ -1,4 +1,5 @@
 import path from "node:path";
+import { z } from "zod";
 
 export const APPLICATION_IMAGE_LIMIT = 6;
 export const APPLICATION_IMAGE_SIZE = 8 * 1024 * 1024;
@@ -65,4 +66,58 @@ export function validateApplicationImageBatch(files: File[]) {
     APPLICATION_IMAGES_TOTAL_SIZE
   )
     throw Error("图片合计不能超过 24 MB");
+}
+
+const recognitionText = (maximum: number) =>
+  z.preprocess(
+    (value) => (value == null ? "" : value),
+    z.string().trim().max(maximum),
+  );
+const recognitionScore = z.preprocess(
+  (value) => (typeof value === "string" ? Number(value) : value),
+  z.number().min(0).max(1).default(0),
+);
+const recognitionResult = z.object({
+  fields: z
+    .object({
+      company: recognitionText(200),
+      role: recognitionText(200),
+      city: recognitionText(100),
+      batch: recognitionText(100),
+      url: recognitionText(2000).refine(
+        (value) => !value || /^https?:\/\//.test(value),
+        "识别出的职位链接格式不正确",
+      ),
+      jd: recognitionText(100000),
+    })
+    .refine((value) => Object.values(value).some(Boolean)),
+  confidence: z.preprocess(
+    (value) =>
+      value && typeof value === "object" && !Array.isArray(value) ? value : {},
+    z.object({
+      company: recognitionScore,
+      role: recognitionScore,
+      city: recognitionScore,
+      batch: recognitionScore,
+      url: recognitionScore,
+      jd: recognitionScore,
+    }),
+  ),
+  notes: z.preprocess(
+    (value) =>
+      typeof value === "string"
+        ? value
+            .split(/\n+/)
+            .map((note) => note.trim())
+            .filter(Boolean)
+        : (value ?? []),
+    z.array(z.string().trim().min(1).max(500)).max(12),
+  ),
+});
+
+export function parseApplicationImageRecognition(value: unknown) {
+  const parsed = recognitionResult.safeParse(value);
+  if (!parsed.success)
+    throw Error("图片已识别，但 AI 返回的字段不完整，请重新识别");
+  return parsed.data;
 }
