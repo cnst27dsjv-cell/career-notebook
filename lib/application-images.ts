@@ -1,5 +1,4 @@
 import path from "node:path";
-import { z } from "zod";
 
 export const APPLICATION_IMAGE_LIMIT = 6;
 export const APPLICATION_IMAGE_SIZE = 8 * 1024 * 1024;
@@ -68,15 +67,6 @@ export function validateApplicationImageBatch(files: File[]) {
     throw Error("图片合计不能超过 24 MB");
 }
 
-const recognitionText = (maximum: number) =>
-  z.preprocess(
-    (value) => (value == null ? "" : value),
-    z.string().trim().max(maximum),
-  );
-const recognitionScore = z.preprocess(
-  (value) => (typeof value === "string" ? Number(value) : value),
-  z.number().min(0).max(1).default(0),
-);
 const recognitionFieldNames = [
   "company",
   "role",
@@ -85,6 +75,49 @@ const recognitionFieldNames = [
   "url",
   "jd",
 ] as const;
+type RecognitionField = (typeof recognitionFieldNames)[number];
+
+const asRecord = (value: unknown) =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+
+function textFrom(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number") return String(value);
+  if (Array.isArray(value))
+    return value.map(textFrom).filter(Boolean).join("\n");
+  const record = asRecord(value);
+  return record
+    ? Object.values(record).map(textFrom).filter(Boolean).join("\n")
+    : "";
+}
+
+const firstText = (record: Record<string, unknown>, names: string[]) => {
+  for (const name of names) {
+    const text = textFrom(record[name]);
+    if (text) return text;
+  }
+  return "";
+};
+
+const scoreFrom = (value: unknown) => {
+  const raw =
+    typeof value === "string"
+      ? Number(value.trim().replace(/%$/, ""))
+      : typeof value === "number"
+        ? value
+        : Number.NaN;
+  if (!Number.isFinite(raw) || raw < 0) return 0;
+  return Math.min(1, raw > 1 ? raw / 100 : raw);
+};
+
+function notesFrom(value: unknown): string[] {
+  if (typeof value === "string") return value.split(/\n+/);
+  if (Array.isArray(value)) return value.flatMap(notesFrom);
+  const record = asRecord(value);
+  return record ? Object.values(record).flatMap(notesFrom) : [];
+}
 
 export function parseApplicationImageText(value: unknown) {
   const record =
@@ -115,57 +148,85 @@ export function parseApplicationImageText(value: unknown) {
   return text;
 }
 
-const recognitionResult = z.object({
-  fields: z
-    .object({
-      company: recognitionText(200),
-      role: recognitionText(200),
-      city: recognitionText(100),
-      batch: recognitionText(100),
-      url: recognitionText(2000).refine(
-        (value) => !value || /^https?:\/\//.test(value),
-        "识别出的职位链接格式不正确",
-      ),
-      jd: recognitionText(100000),
-    })
-    .refine((value) => Object.values(value).some(Boolean)),
-  confidence: z.preprocess(
-    (value) => {
-      if (
-        typeof value === "number" ||
-        (typeof value === "string" && value.trim() !== "")
-      )
-        return Object.fromEntries(
-          recognitionFieldNames.map((name) => [name, value]),
-        );
-      return value && typeof value === "object" && !Array.isArray(value)
-        ? value
-        : {};
-    },
-    z.object({
-      company: recognitionScore,
-      role: recognitionScore,
-      city: recognitionScore,
-      batch: recognitionScore,
-      url: recognitionScore,
-      jd: recognitionScore,
-    }),
-  ),
-  notes: z.preprocess(
-    (value) =>
-      typeof value === "string"
-        ? value
-            .split(/\n+/)
-            .map((note) => note.trim())
-            .filter(Boolean)
-        : (value ?? []),
-    z.array(z.string().trim().min(1).max(500)).max(12),
-  ),
-});
-
 export function parseApplicationImageRecognition(value: unknown) {
-  const parsed = recognitionResult.safeParse(value);
-  if (!parsed.success)
+  const root = asRecord(value) || {};
+  const result =
+    asRecord(root.result) || asRecord(root.data) || asRecord(root.output) || root;
+  const source =
+    asRecord(result.fields) ||
+    asRecord(result.application) ||
+    asRecord(result.job) ||
+    result;
+  const fields: Record<RecognitionField, string> = {
+    company: firstText(source, ["company", "companyName", "employer", "公司"])
+      .slice(0, 200),
+    role: firstText(source, ["role", "position", "jobTitle", "岗位"]).slice(
+      0,
+      200,
+    ),
+    city: firstText(source, [
+      "city",
+      "location",
+      "workLocation",
+      "城市",
+      "工作地点",
+    ]).slice(0, 100),
+    batch: firstText(source, [
+      "batch",
+      "recruitmentBatch",
+      "hiringBatch",
+      "招聘批次",
+    ]).slice(0, 100),
+    url: firstText(source, ["url", "jobUrl", "link", "职位链接"]).slice(
+      0,
+      2000,
+    ),
+    jd: firstText(source, [
+      "jd",
+      "jobDescription",
+      "description",
+      "岗位描述",
+    ]).slice(0, 100000),
+  };
+  const notes = notesFrom(result.notes ?? root.notes)
+    .map((note) => note.trim().slice(0, 500))
+    .filter(Boolean)
+    .slice(0, 12);
+  if (fields.url && !/^https?:\/\//.test(fields.url)) {
+    fields.url = "";
+    notes.unshift("图片中的职位链接格式不完整，未自动填写");
+  }
+  if (!Object.values(fields).some(Boolean))
     throw Error("图片已识别，但 AI 返回的字段不完整，请重新识别");
-  return parsed.data;
+  const confidenceValue = result.confidence ?? root.confidence;
+  const confidenceRecord = asRecord(confidenceValue);
+  const confidence = Object.fromEntries(
+    recognitionFieldNames.map((name) => [
+      name,
+      scoreFrom(confidenceRecord ? confidenceRecord[name] : confidenceValue),
+    ]),
+  ) as Record<RecognitionField, number>;
+  return { fields, confidence, notes: notes.slice(0, 12) };
+}
+
+export function applicationImageTextFallback(text: string) {
+  return {
+    fields: {
+      company: "",
+      role: "",
+      city: "",
+      batch: "",
+      url: "",
+      jd: text.trim().slice(0, 100000),
+    },
+    confidence: {
+      company: 0,
+      role: 0,
+      city: 0,
+      batch: 0,
+      url: 0,
+      jd: 0.5,
+    },
+    notes: ["已提取图片全文，但岗位字段需要人工确认"],
+  };
 }

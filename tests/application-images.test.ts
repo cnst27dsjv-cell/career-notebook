@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applicationImageTextFallback,
   parseApplicationImageText,
   parseApplicationImageRecognition,
   readApplicationImage,
@@ -86,6 +87,56 @@ describe("application image validation", () => {
       batch: 0.9,
       url: 0.9,
       jd: 0.9,
+    });
+  });
+
+  it("accepts wrapped fields, aliases and imperfect metadata", () => {
+    expect(
+      parseApplicationImageRecognition({
+        result: {
+          companyName: "测试科技",
+          position: "产品经理",
+          location: "上海",
+          recruitmentBatch: "2027 届秋招",
+          jobDescription: {
+            responsibilities: ["负责需求分析", "推进产品上线"],
+            requirements: ["逻辑清晰"],
+          },
+          confidence: "90%",
+          notes: { warning: "未提供职位链接" },
+        },
+      }),
+    ).toMatchObject({
+      fields: {
+        company: "测试科技",
+        role: "产品经理",
+        city: "上海",
+        batch: "2027 届秋招",
+        jd: "负责需求分析\n推进产品上线\n逻辑清晰",
+      },
+      confidence: { company: 0.9, jd: 0.9 },
+      notes: ["未提供职位链接"],
+    });
+  });
+
+  it("does not reject useful fields because optional metadata is malformed", () => {
+    expect(
+      parseApplicationImageRecognition({
+        fields: { company: "测试科技", role: "产品经理" },
+        confidence: { company: 95, role: "unknown" },
+        notes: Array.from({ length: 20 }, (_, index) => ({ note: `提示 ${index}` })),
+      }),
+    ).toMatchObject({
+      fields: { company: "测试科技", role: "产品经理" },
+      confidence: { company: 0.95, role: 0 },
+    });
+  });
+
+  it("keeps OCR text as JD when structured analysis is unusable", () => {
+    expect(applicationImageTextFallback("岗位职责\n负责需求分析")).toMatchObject({
+      fields: { jd: "岗位职责\n负责需求分析" },
+      confidence: { jd: 0.5 },
+      notes: ["已提取图片全文，但岗位字段需要人工确认"],
     });
   });
 
