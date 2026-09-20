@@ -335,11 +335,19 @@ export async function GET(request: Request) {
       },
       jobs,
       services: {
-        model: !!(process.env.MODEL_API_KEY && process.env.MODEL_NAME),
-        search: !!(process.env.MODEL_API_KEY && process.env.MODEL_SEARCH_NAME),
-        generalModel: process.env.MODEL_NAME || "",
-        polishModel: process.env.MODEL_POLISH_NAME || "",
-        searchModel: process.env.MODEL_SEARCH_NAME || "",
+        model: !!(
+          process.env.TEXT_MODEL_API_KEY && process.env.TEXT_MODEL_NAME
+        ),
+        vision: !!(
+          process.env.VISION_MODEL_API_KEY && process.env.VISION_MODEL_NAME
+        ),
+        search: !!(
+          process.env.SEARCH_MODEL_API_KEY && process.env.SEARCH_MODEL_NAME
+        ),
+        generalModel: process.env.TEXT_MODEL_NAME || "",
+        polishModel: process.env.TEXT_MODEL_POLISH_NAME || "",
+        visionModel: process.env.VISION_MODEL_NAME || "",
+        searchModel: process.env.SEARCH_MODEL_NAME || "",
         mailMode: process.env.MAIL_MODE || "unconfigured",
         worker: heartbeat?.updatedAt || null,
       },

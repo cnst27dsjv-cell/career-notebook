@@ -24,7 +24,7 @@ Cron 每分钟触发一次扫描，保留数据库锁和发送状态去重。云
 
 ## 密钥
 
-参考 `deploy/cloudflare.env.example`。`DATABASE_URL`、`BETTER_AUTH_SECRET`、`MODEL_API_KEY`、`RESEND_API_KEY` 存为加密 Secrets。域名、模型名称等可作为普通运行变量。不要加 NEXT_PUBLIC_ 前缀。
+参考 `deploy/cloudflare.env.example`。`DATABASE_URL`、`BETTER_AUTH_SECRET`、`TEXT_MODEL_API_KEY`、`VISION_MODEL_API_KEY`、`RESEND_API_KEY` 存为加密 Secrets。域名、模型名称等可作为普通运行变量。不要加 NEXT_PUBLIC_ 前缀。
 
 本地 Workers 预览使用忽略的 `.dev.vars`；生成的 dist 目录可能含本地预览密钥，不可上传到 GitHub，也不要手工打包整个 dist 分享。
 

@@ -34,21 +34,22 @@ npm run worker
 
 ## 自行配置 AI
 
-AI 配置只保存在服务器端的 `.env`，不会进入浏览器代码。仓库忽略所有 `.env` 文件，只保留不含密钥的示例文件。Fork 后可自行选择兼容 OpenAI API 的服务商和模型：
+AI 配置只保存在服务器端的 `.env`，不会进入浏览器代码。仓库忽略所有 `.env` 文件，只保留不含密钥的示例文件。默认用 DeepSeek 处理文本，用 Tokendance 的视觉模型处理图片：
 
 ```env
-MODEL_BASE_URL="https://your-openai-compatible-provider.example/v1"
-MODEL_API_KEY="your-private-api-key"
-MODEL_NAME="your-general-model"
-MODEL_VISION_NAME=""
-MODEL_POLISH_NAME="your-polish-model"
-MODEL_SEARCH_NAME=""
+TEXT_MODEL_BASE_URL="https://api.deepseek.com"
+TEXT_MODEL_API_KEY="your-deepseek-api-key"
+TEXT_MODEL_NAME="deepseek-flash"
+TEXT_MODEL_POLISH_NAME="deepseek-v4-pro"
+VISION_MODEL_BASE_URL="https://tokendance.space/gateway/v1"
+VISION_MODEL_API_KEY="your-tokendance-api-key"
+VISION_MODEL_NAME="qwen3.5-flash"
 ```
 
-- `MODEL_NAME` 用于资料分类、信息提取和普通助理任务。
-- `MODEL_VISION_NAME` 用于招聘截图识别；留空时使用通用模型。填写的模型必须支持图片输入。
-- `MODEL_POLISH_NAME` 用于中文润色和模拟面试反馈；留空时使用通用模型。
-- `MODEL_SEARCH_NAME` 用于联网调研。只有服务商支持 Responses API 的 `web_search` 工具时才填写；不支持时留空，手动资料入口仍可使用。
+- `TEXT_MODEL_NAME` 用于资料分类、信息提取和普通助理任务。
+- `TEXT_MODEL_POLISH_NAME` 用于中文润色和模拟面试反馈；留空时使用通用文本模型。
+- `VISION_MODEL_NAME` 用于招聘截图识别，必须支持图片输入。
+- 联网调研需要另外配置 `SEARCH_MODEL_BASE_URL`、`SEARCH_MODEL_API_KEY` 和 `SEARCH_MODEL_NAME`；当前两个默认服务不会被当作联网搜索服务。
 - 修改配置后重启网页和 worker，再在设置页执行连接测试。
 
 不要把真实密钥写入源码、截图、Issue 或提交记录。如果密钥曾被提交过，应立即在服务商后台撤销并重新生成。

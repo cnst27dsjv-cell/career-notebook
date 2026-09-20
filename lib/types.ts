@@ -123,9 +123,11 @@ export type Data = {
   }[];
   services: {
     model: boolean;
+    vision: boolean;
     search: boolean;
     generalModel: string;
     polishModel: string;
+    visionModel: string;
     searchModel: string;
     mailMode: string;
     worker: string | null;

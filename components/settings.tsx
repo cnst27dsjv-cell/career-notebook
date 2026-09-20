@@ -12,16 +12,18 @@ export default function Settings() {
   const { data, mutate, notify } = useWorkspace();
   const [busy, setBusy] = useState(false);
   const [connectionBusy, setConnectionBusy] = useState<
-    "model" | "search" | null
+    "model" | "vision" | "search" | null
   >(null);
-  const testConnection = async (target: "model" | "search") => {
+  const testConnection = async (target: "model" | "vision" | "search") => {
     setConnectionBusy(target);
     try {
       const result = await api("/api/ai", { action: "connection", target });
       notify(
         target === "model"
-          ? "AI 连接成功，测试未包含个人资料。"
-          : `联网搜索成功，取得 ${result.sourceCount} 个来源。`,
+          ? "DeepSeek 文本连接成功，测试未包含个人资料。"
+          : target === "vision"
+            ? "Tokendance 图片识别连接成功。"
+            : `联网搜索成功，取得 ${result.sourceCount} 个来源。`,
       );
     } catch (e) {
       notify((e as Error).message);
@@ -173,7 +175,7 @@ export default function Settings() {
               </b>
             </div>
             <div>
-              <span>AI 助理</span>
+              <span>AI 文本助理</span>
               <b>
                 {data.services.model
                   ? data.services.generalModel
@@ -183,6 +185,14 @@ export default function Settings() {
             <div>
               <span>中文润色</span>
               <b>{data.services.polishModel || "跟随默认模型"}</b>
+            </div>
+            <div>
+              <span>图片识别</span>
+              <b>
+                {data.services.vision
+                  ? data.services.visionModel
+                  : "待填写 Tokendance 密钥"}
+              </b>
             </div>
             <div>
               <span>联网调研</span>
@@ -200,6 +210,14 @@ export default function Settings() {
                 onClick={() => testConnection("model")}
               >
                 {connectionBusy === "model" ? "正在测试…" : "测试 AI 连接"}
+              </button>
+              <button
+                className="secondary"
+                type="button"
+                disabled={connectionBusy !== null || !data.services.vision}
+                onClick={() => testConnection("vision")}
+              >
+                {connectionBusy === "vision" ? "正在测试…" : "测试图片识别"}
               </button>
               <button
                 className="secondary"

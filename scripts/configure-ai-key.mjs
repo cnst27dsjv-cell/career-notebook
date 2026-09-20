@@ -19,13 +19,18 @@ button{width:100%;margin-top:16px;padding:12px;border:0;border-radius:5px;backgr
 .message{color:#7c1020;font-weight:700}.note{font-size:13px}
 </style></head><body><main><h1>配置 AI 密钥</h1><p>密钥只会保存到这台电脑上的求职手账配置，不会显示或发送到聊天。</p>
 ${message ? `<p class="message">${message}</p>` : ""}
-<form method="post"><input type="hidden" name="token" value="${token}"><label for="key">AI API Key</label>
-<input id="key" name="key" type="password" required autocomplete="off" autofocus placeholder="在这里粘贴密钥">
+<form method="post"><input type="hidden" name="token" value="${token}"><label for="textKey">DeepSeek API Key</label>
+<input id="textKey" name="textKey" type="password" required autocomplete="off" autofocus placeholder="用于文本助理和润色">
+<label for="visionKey">Tokendance API Key</label>
+<input id="visionKey" name="visionKey" type="password" required autocomplete="off" placeholder="用于招聘截图识别">
 <button type="submit">保存到本机</button></form><p class="note">服务地址和模型名请在私有 .env 文件中配置。保存后可以关闭本页。</p></main></body></html>`;
 
 const server = http.createServer(async (request, response) => {
   if (request.method === "GET") {
-    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+    response.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+    });
     response.end(page());
     return;
   }
@@ -42,16 +47,34 @@ const server = http.createServer(async (request, response) => {
     }
   }
   const form = new URLSearchParams(body);
-  const key = form.get("key")?.trim() || "";
-  if (form.get("token") !== token || key.length < 10) {
+  const textKey = form.get("textKey")?.trim() || "";
+  const visionKey = form.get("visionKey")?.trim() || "";
+  if (
+    form.get("token") !== token ||
+    textKey.length < 10 ||
+    visionKey.length < 10
+  ) {
     response.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
     response.end(page("密钥为空或格式不正确，请重新填写。"));
     return;
   }
   const env = await readFile(envPath, "utf8");
-  const next = env.replace(/^MODEL_API_KEY=.*$/m, `MODEL_API_KEY=${JSON.stringify(key)}`);
+  const setValue = (source, name, value) => {
+    const line = `${name}=${JSON.stringify(value)}`;
+    return new RegExp(`^${name}=.*$`, "m").test(source)
+      ? source.replace(new RegExp(`^${name}=.*$`, "m"), line)
+      : `${source.trimEnd()}\n${line}\n`;
+  };
+  const next = setValue(
+    setValue(env, "TEXT_MODEL_API_KEY", textKey),
+    "VISION_MODEL_API_KEY",
+    visionKey,
+  );
   await writeFile(envPath, next, { mode: 0o600 });
-  response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+  response.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
   response.end(page("保存成功，可以关闭这个页面。"));
   setTimeout(() => server.close(), 500);
 });

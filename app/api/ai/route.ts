@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { userFor, failure } from "@/lib/http";
-import { generate, searchWeb } from "@/lib/model";
+import { generate, generateWithImages, searchWeb } from "@/lib/model";
 import { z } from "zod";
 import { suggestSlots } from "@/lib/rules";
 import type { Prisma } from "@prisma/client";
@@ -25,7 +25,7 @@ export async function POST(r: Request) {
     const w = { userId: user.id };
     const input = z.string().max(100000).optional().parse(raw.input) || "";
     if (action === "connection") {
-      const target = z.enum(["model", "search"]).parse(raw.target);
+      const target = z.enum(["model", "vision", "search"]).parse(raw.target);
       if (target === "model") {
         const result = z
           .object({ ok: z.boolean() })
@@ -35,6 +35,24 @@ export async function POST(r: Request) {
               "不含个人信息的连接测试",
             ),
           );
+        return Response.json(result);
+      }
+      if (target === "vision") {
+        const result = z.object({ ok: z.boolean() }).parse(
+          await generateWithImages(
+            '这是连接测试。不需要描述图片，只返回 {"ok":true}。',
+            "不含个人信息的图片连接测试",
+            [
+              {
+                mime: "image/png",
+                data: Buffer.from(
+                    "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAI0lEQVR4nGP8//8/AymAiSTVDKMaiANMRKqDg1ENxACSQwkAVW0DHeN02ZEAAAAASUVORK5CYII=",
+                  "base64",
+                ),
+              },
+            ],
+          ),
+        );
         return Response.json(result);
       }
       const result = await searchWeb("OpenAI Next Credits 官方接入指南");
