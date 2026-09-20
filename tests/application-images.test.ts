@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseApplicationImageText,
   parseApplicationImageRecognition,
   readApplicationImage,
   validateApplicationImageBatch,
@@ -47,6 +48,44 @@ describe("application image validation", () => {
       fields: { city: "" },
       confidence: { company: 0.9, role: 0.8, city: 0 },
       notes: ["城市未在图片中出现"],
+    });
+  });
+
+  it("accepts OCR text from common vision model response shapes", () => {
+    expect(parseApplicationImageText({ text: "岗位职责\n负责需求分析" })).toBe(
+      "岗位职责\n负责需求分析",
+    );
+    expect(
+      parseApplicationImageText({
+        pages: [{ text: "第 1 页" }, { content: "第 2 页" }],
+      }),
+    ).toBe("第 1 页\n\n第 2 页");
+  });
+
+  it("rejects empty OCR output", () => {
+    expect(() => parseApplicationImageText({ text: "   " })).toThrow(
+      "没有识别出可用文字",
+    );
+  });
+
+  it("applies a scalar confidence score to every field", () => {
+    expect(
+      parseApplicationImageRecognition({
+        fields: {
+          company: "测试科技",
+          role: "产品经理",
+          jd: "负责产品需求分析",
+        },
+        confidence: 0.9,
+        notes: [],
+      }).confidence,
+    ).toEqual({
+      company: 0.9,
+      role: 0.9,
+      city: 0.9,
+      batch: 0.9,
+      url: 0.9,
+      jd: 0.9,
     });
   });
 

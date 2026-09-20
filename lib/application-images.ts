@@ -77,6 +77,44 @@ const recognitionScore = z.preprocess(
   (value) => (typeof value === "string" ? Number(value) : value),
   z.number().min(0).max(1).default(0),
 );
+const recognitionFieldNames = [
+  "company",
+  "role",
+  "city",
+  "batch",
+  "url",
+  "jd",
+] as const;
+
+export function parseApplicationImageText(value: unknown) {
+  const record =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const direct = [record.text, record.rawText, record.ocrText, record.content]
+    .find((candidate) => typeof candidate === "string");
+  const pages = Array.isArray(record.pages)
+    ? record.pages
+        .map((page) => {
+          if (typeof page === "string") return page;
+          if (!page || typeof page !== "object") return "";
+          const item = page as Record<string, unknown>;
+          return typeof item.text === "string"
+            ? item.text
+            : typeof item.content === "string"
+              ? item.content
+              : "";
+        })
+        .filter(Boolean)
+        .join("\n\n")
+    : "";
+  const text = String(direct || pages).trim();
+  if (!text) throw Error("图片中没有识别出可用文字，请检查清晰度后重试");
+  if (text.length > 100000)
+    throw Error("识别出的文字过长，请减少图片数量后重试");
+  return text;
+}
+
 const recognitionResult = z.object({
   fields: z
     .object({
@@ -92,8 +130,18 @@ const recognitionResult = z.object({
     })
     .refine((value) => Object.values(value).some(Boolean)),
   confidence: z.preprocess(
-    (value) =>
-      value && typeof value === "object" && !Array.isArray(value) ? value : {},
+    (value) => {
+      if (
+        typeof value === "number" ||
+        (typeof value === "string" && value.trim() !== "")
+      )
+        return Object.fromEntries(
+          recognitionFieldNames.map((name) => [name, value]),
+        );
+      return value && typeof value === "object" && !Array.isArray(value)
+        ? value
+        : {};
+    },
     z.object({
       company: recognitionScore,
       role: recognitionScore,
