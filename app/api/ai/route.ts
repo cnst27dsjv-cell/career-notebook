@@ -13,6 +13,10 @@ import {
   type MaterialClassification,
 } from "@/lib/material-import";
 import { isSubstantivePolish } from "@/lib/polish";
+import {
+  automaticApplicationStageStatus,
+  eventKindForApplicationStage,
+} from "@/lib/application-stage";
 export async function POST(r: Request) {
   try {
     const user = await userFor(r);
@@ -189,7 +193,6 @@ export async function POST(r: Request) {
           stage: z
             .enum(["待投递", "已投递", "测评", "笔试", "面试", "Offer"])
             .nullable(),
-          stageStatus: z.enum(["待安排", "待完成", "等待结果"]).nullable(),
           outcome: z
             .enum(["", "未通过", "主动撤回", "录用已接受", "录用已拒绝"])
             .nullable(),
@@ -197,7 +200,7 @@ export async function POST(r: Request) {
         })
         .parse(
           await generate(
-            "根据用户明确表达生成投递进度更新草稿，返回 {id,stage,stageStatus,outcome,missing}。只选择提供的记录ID；同公司多岗位且无法确定则id=null并询问岗位。未要求变更的字段返回null。完成面试仅代表等待结果，不代表通过。",
+            "根据用户明确表达生成投递进度更新草稿，返回 {id,stage,outcome,missing}。只选择提供的记录ID；同公司多岗位且无法确定则id=null并询问岗位。未要求变更的字段返回null。阶段状态由关联日程自动计算，不要返回阶段状态。完成面试仅代表等待结果，不代表通过。",
             {
               input,
               candidates: candidates.map((a) => ({
@@ -214,11 +217,27 @@ export async function POST(r: Request) {
       const existing = candidates.find((a) => a.id === result.id);
       if (!existing)
         throw Error(result.missing.join("、") || "请明确要更新的公司和岗位");
+      const stage = result.stage ?? existing.stage;
+      const eventKind = eventKindForApplicationStage(stage);
+      const pendingEvent = eventKind
+        ? await db.event.findFirst({
+            where: {
+              ...w,
+              applicationId: existing.id,
+              kind: eventKind,
+              status: "待完成",
+            },
+          })
+        : null;
       return Response.json({
         application: {
           ...existing,
-          stage: result.stage ?? existing.stage,
-          stageStatus: result.stageStatus ?? existing.stageStatus,
+          stage,
+          stageStatus: automaticApplicationStageStatus(stage, {
+            hasPendingEvent: Boolean(pendingEvent),
+            keepWaiting:
+              stage === existing.stage && existing.stageStatus === "等待结果",
+          }),
           outcome: result.outcome ?? existing.outcome,
         },
         before: existing,

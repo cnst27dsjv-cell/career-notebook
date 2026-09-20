@@ -10,7 +10,32 @@ import {
   type ApplicationImageFields,
   type PendingApplicationImage,
 } from "./application-image-import";
+import { eventKindForApplicationStage } from "@/lib/application-stage";
 const val = (f: FormData, key: string) => String(f.get(key) || "");
+type ApplicationScheduleDraft = {
+  start: string;
+  end: string;
+  deadline: string;
+  location: string;
+  reminderHours: number[];
+  customHours: string;
+  absoluteReminder: string;
+  allowConflict: boolean;
+};
+const scheduleDraft = (event?: Event): ApplicationScheduleDraft => ({
+  start: inputDate(event?.start),
+  end: inputDate(event?.end),
+  deadline: inputDate(event?.deadline),
+  location: event?.location || "",
+  reminderHours: event?.reminderHours.filter((hour) =>
+    [24, 2, 0.5].includes(hour),
+  ) || [24],
+  customHours: String(
+    event?.reminderHours.find((hour) => ![24, 2, 0.5].includes(hour)) || "",
+  ),
+  absoluteReminder: inputDate(event?.absoluteReminders[0]),
+  allowConflict: false,
+});
 export function ApplicationForm({
   item,
   onClose,
@@ -19,6 +44,18 @@ export function ApplicationForm({
   onClose: () => void;
 }) {
   const { data, refresh } = useWorkspace();
+  const [stage, setStage] = useState(item?.stage || "待投递");
+  const applicationId = item?.id;
+  const initialEventKind = eventKindForApplicationStage(stage);
+  const initialSchedule = data.events.find(
+    (event) =>
+      event.applicationId === applicationId &&
+      event.kind === initialEventKind &&
+      event.status === "待完成",
+  );
+  const [schedule, setSchedule] = useState<ApplicationScheduleDraft>(() =>
+    scheduleDraft(initialSchedule),
+  );
   const [draft, setDraft] = useState<ApplicationImageFields>({
     company: item?.company || "",
     role: item?.role || "",
@@ -47,6 +84,40 @@ export function ApplicationForm({
     batch: "招聘批次",
     url: "职位链接",
     jd: "岗位描述（JD）",
+  };
+  const linkedApplicationId = persisted?.id || item?.id;
+  const eventKind = eventKindForApplicationStage(stage);
+  const linkedSchedule = data.events.find(
+    (event) =>
+      event.applicationId === linkedApplicationId &&
+      event.kind === eventKind &&
+      event.status === "待完成",
+  );
+  const hasSchedule = Boolean(schedule.start || schedule.deadline);
+  const automaticStatus =
+    stage === "已投递"
+      ? "等待结果"
+      : hasSchedule
+        ? "待完成"
+        : item?.stage === stage && item.stageStatus === "等待结果"
+          ? "等待结果"
+          : "待安排";
+  const otherPendingEvent = data.events.find(
+    (event) =>
+      event.applicationId === linkedApplicationId &&
+      event.status === "待完成" &&
+      event.kind !== eventKind,
+  );
+  const changeStage = (next: string) => {
+    setStage(next);
+    const nextKind = eventKindForApplicationStage(next);
+    const nextEvent = data.events.find(
+      (event) =>
+        event.applicationId === linkedApplicationId &&
+        event.kind === nextKind &&
+        event.status === "待完成",
+    );
+    setSchedule(scheduleDraft(nextEvent));
   };
   const existingImages = data.files
     .filter(
@@ -97,17 +168,39 @@ export function ApplicationForm({
         onClose={onClose}
         disabled={recognizing}
         onSubmit={async (f) => {
+          const reminderHours = [
+            ...schedule.reminderHours,
+            ...(schedule.customHours ? [Number(schedule.customHours)] : []),
+          ];
+          const schedulePayload = eventKind
+            ? hasSchedule
+              ? {
+                  mode: "upsert",
+                  start: iso(schedule.start),
+                  end: iso(schedule.end),
+                  deadline: iso(schedule.deadline),
+                  location: schedule.location,
+                  reminderHours: [...new Set(reminderHours)],
+                  absoluteReminders: schedule.absoluteReminder
+                    ? [iso(schedule.absoluteReminder)]
+                    : [],
+                  allowConflict: schedule.allowConflict,
+                }
+              : linkedSchedule
+                ? { mode: "remove" }
+                : undefined
+            : undefined;
           const saved = (await api("/api/data", {
             action: "application.save",
             id: persisted?.id || item?.id,
             version: persisted?.version ?? item?.version,
+            schedule: schedulePayload,
             values: {
               company: draft.company,
               role: draft.role,
               city: draft.city,
               batch: draft.batch,
-              stage: val(f, "stage"),
-              stageStatus: val(f, "stageStatus"),
+              stage,
               outcome: val(f, "outcome"),
               appliedAt: iso(f.get("appliedAt")),
               url: draft.url,
@@ -249,22 +342,30 @@ export function ApplicationForm({
             <input required name="batch" {...field("batch")} />
           </Field>
           <Field label="当前阶段">
-            <select name="stage" defaultValue={item?.stage || "待投递"}>
+            <select
+              name="stage"
+              value={stage}
+              onChange={(event) => changeStage(event.target.value)}
+            >
               {stages.map((s) => (
                 <option key={s}>{s}</option>
               ))}
             </select>
           </Field>
-          <Field label="阶段状态">
-            <select
-              name="stageStatus"
-              defaultValue={item?.stageStatus || "待安排"}
-            >
-              {["待安排", "待完成", "等待结果"].map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
-          </Field>
+          {stage !== "Offer" && (
+            <Field label="阶段状态（自动）">
+              <div className={`automatic-stage-status status-${automaticStatus}`}>
+                <strong>{automaticStatus}</strong>
+                <span>
+                  {automaticStatus === "待安排"
+                    ? "尚未设置日程"
+                    : automaticStatus === "待完成"
+                      ? "已关联日历安排"
+                      : "等待招聘方后续结果"}
+                </span>
+              </div>
+            </Field>
+          )}
           <Field label="投递时间（北京时间）">
             <input
               type="datetime-local"
@@ -281,6 +382,141 @@ export function ApplicationForm({
             </select>
           </Field>
         </div>
+        {eventKind && (
+          <section className="application-schedule">
+            <div className="application-schedule-heading">
+              <div>
+                <span className="eyebrow">CALENDAR</span>
+                <h3>安排{eventKind}时间</h3>
+              </div>
+              <p>填写执行时间或截止时间后，将自动加入日历并启用提醒。</p>
+            </div>
+            {otherPendingEvent && (
+              <p className="schedule-warning">
+                之前的“{otherPendingEvent.title}”仍在日历中，请记得处理。
+              </p>
+            )}
+            <div className="form-grid">
+              <Field label="执行开始（北京时间）">
+                <input
+                  type="datetime-local"
+                  value={schedule.start}
+                  onChange={(event) =>
+                    setSchedule((current) => ({
+                      ...current,
+                      start: event.target.value,
+                    }))
+                  }
+                />
+              </Field>
+              <Field label="执行结束">
+                <input
+                  type="datetime-local"
+                  value={schedule.end}
+                  onChange={(event) =>
+                    setSchedule((current) => ({
+                      ...current,
+                      end: event.target.value,
+                    }))
+                  }
+                />
+              </Field>
+              <Field label="截止时间">
+                <input
+                  type="datetime-local"
+                  value={schedule.deadline}
+                  onChange={(event) =>
+                    setSchedule((current) => ({
+                      ...current,
+                      deadline: event.target.value,
+                    }))
+                  }
+                />
+              </Field>
+              <Field label="地点 / 会议链接">
+                <input
+                  value={schedule.location}
+                  onChange={(event) =>
+                    setSchedule((current) => ({
+                      ...current,
+                      location: event.target.value,
+                    }))
+                  }
+                  placeholder={eventKind === "面试" ? "会议链接或面试地点" : "可选"}
+                />
+              </Field>
+            </div>
+            <fieldset className="checks">
+              <legend>提前提醒</legend>
+              {[
+                [24, "1 天前"],
+                [2, "2 小时前"],
+                [0.5, "30 分钟前"],
+              ].map(([hours, label]) => (
+                <label key={hours}>
+                  <input
+                    type="checkbox"
+                    checked={schedule.reminderHours.includes(Number(hours))}
+                    onChange={(event) =>
+                      setSchedule((current) => ({
+                        ...current,
+                        reminderHours: event.target.checked
+                          ? [...current.reminderHours, Number(hours)]
+                          : current.reminderHours.filter(
+                              (value) => value !== Number(hours),
+                            ),
+                      }))
+                    }
+                  />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+            <div className="form-grid">
+              <Field label="额外提前提醒（小时）">
+                <input
+                  type="number"
+                  min="0"
+                  max="720"
+                  step="0.5"
+                  value={schedule.customHours}
+                  onChange={(event) =>
+                    setSchedule((current) => ({
+                      ...current,
+                      customHours: event.target.value,
+                    }))
+                  }
+                  placeholder="例如：6"
+                />
+              </Field>
+              <Field label="或指定提醒时间（北京时间）">
+                <input
+                  type="datetime-local"
+                  value={schedule.absoluteReminder}
+                  onChange={(event) =>
+                    setSchedule((current) => ({
+                      ...current,
+                      absoluteReminder: event.target.value,
+                    }))
+                  }
+                />
+              </Field>
+            </div>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={schedule.allowConflict}
+                onChange={(event) =>
+                  setSchedule((current) => ({
+                    ...current,
+                    allowConflict: event.target.checked,
+                  }))
+                }
+              />
+              允许与已有日程冲突
+            </label>
+          </section>
+        )}
         <Field label="实际使用的简历版本">
           <select name="resumeId" defaultValue={item?.resumeId || ""}>
             <option value="">暂未关联简历</option>

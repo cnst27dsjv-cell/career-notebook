@@ -5,6 +5,12 @@ import { sendMail } from "@/lib/mail";
 import { z } from "zod";
 import { randomBytes, createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
+import {
+  applicationStageForEventKind,
+  automaticApplicationStageStatus,
+  completedApplicationStageForEventKind,
+  eventKindForApplicationStage,
+} from "@/lib/application-stage";
 const text = z.string().trim().max(100000);
 const date = z
   .union([z.string().datetime({ offset: true }), z.literal(""), z.null()])
@@ -16,7 +22,6 @@ const appSchema = z.object({
   city: text.default(""),
   batch: text.default("2027 届秋招"),
   stage: z.enum(["待投递", "已投递", "测评", "笔试", "面试", "Offer"]),
-  stageStatus: z.enum(["待安排", "待完成", "等待结果"]),
   outcome: z
     .enum(["", "未通过", "主动撤回", "录用已接受", "录用已拒绝"])
     .default(""),
@@ -28,6 +33,44 @@ const appSchema = z.object({
   notes: text.default(""),
   resumeId: z.string().nullable().optional(),
 });
+const applicationScheduleSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("remove") }),
+  z
+    .object({
+      mode: z.literal("upsert"),
+      start: date,
+      end: date,
+      deadline: date,
+      location: text.default(""),
+      reminderHours: z.array(z.number().min(0).max(720)).max(8).default([24]),
+      absoluteReminders: z
+        .array(
+          z
+            .string()
+            .datetime({ offset: true })
+            .transform((value) => new Date(value)),
+        )
+        .max(8)
+        .default([]),
+      allowConflict: z.boolean().default(false),
+    })
+    .refine((value) => value.start || value.deadline, "请填写执行时间或截止时间")
+    .refine(
+      (value) => !value.start || !value.end || value.end > value.start,
+      "结束时间必须晚于开始时间",
+    )
+    .refine(
+      (value) => !value.end || !!value.start,
+      "结束时间需要执行开始时间",
+    )
+    .refine(
+      (value) =>
+        !value.start ||
+        !value.deadline ||
+        (value.end ?? value.start) <= value.deadline,
+      "执行时间不能晚于截止时间",
+    ),
+]);
 const eventSchema = z
   .object({
     title: text.min(1),
@@ -99,6 +142,112 @@ const materialSchema = z
   .transform((value) =>
     value.category === "通用问题" ? { ...value, roleScope: "" } : value,
   );
+
+async function writeApplicationProgress(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  applicationId: string,
+  stage: string,
+  stageStatus: string,
+  appliedAt?: Date,
+) {
+  const application = await tx.application.findFirst({
+    where: { id: applicationId, userId },
+  });
+  if (!application) return;
+  const changed =
+    application.stage !== stage ||
+    application.stageStatus !== stageStatus ||
+    (!!appliedAt && !application.appliedAt);
+  if (!changed) return;
+  await tx.application.update({
+    where: { id: application.id },
+    data: {
+      stage,
+      stageStatus,
+      appliedAt: application.appliedAt ?? appliedAt,
+      version: { increment: 1 },
+      history: [
+        ...(application.history as Prisma.JsonArray),
+        {
+          at: new Date().toISOString(),
+          from: `${application.stage} · ${application.stageStatus}`,
+          to: `${stage} · ${stageStatus}`,
+        },
+      ],
+    },
+  });
+}
+
+async function syncApplicationForPendingEvent(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  event: { applicationId: string | null; kind: string },
+) {
+  if (!event.applicationId) return;
+  const stage = applicationStageForEventKind(event.kind);
+  if (!stage) return;
+  await writeApplicationProgress(
+    tx,
+    userId,
+    event.applicationId,
+    stage,
+    "待完成",
+  );
+}
+
+async function syncApplicationAfterEventRemoval(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  event: { id: string; applicationId: string | null; kind: string },
+) {
+  if (!event.applicationId) return;
+  const stage = applicationStageForEventKind(event.kind);
+  if (!stage) return;
+  const application = await tx.application.findFirst({
+    where: { id: event.applicationId, userId },
+  });
+  if (!application || application.stage !== stage) return;
+  const another = await tx.event.findFirst({
+    where: {
+      userId,
+      applicationId: event.applicationId,
+      kind: event.kind,
+      status: "待完成",
+      id: { not: event.id },
+    },
+  });
+  await writeApplicationProgress(
+    tx,
+    userId,
+    event.applicationId,
+    stage,
+    another ? "待完成" : "待安排",
+  );
+}
+
+async function syncApplicationForCompletedEvent(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  event: { applicationId: string | null; kind: string },
+) {
+  if (!event.applicationId) return;
+  const pendingStage = applicationStageForEventKind(event.kind);
+  const completedStage = completedApplicationStageForEventKind(event.kind);
+  if (!pendingStage || !completedStage) return;
+  const application = await tx.application.findFirst({
+    where: { id: event.applicationId, userId },
+  });
+  if (!application || application.stage !== pendingStage) return;
+  await writeApplicationProgress(
+    tx,
+    userId,
+    event.applicationId,
+    completedStage,
+    "等待结果",
+    event.kind === "投递" ? new Date() : undefined,
+  );
+}
 export async function GET(request: Request) {
   try {
     const user = await userFor(request);
@@ -150,8 +299,27 @@ export async function GET(request: Request) {
       }),
       db.heartbeat.findUnique({ where: { id: "reminders" } }),
     ]);
+    const applicationsWithAutomaticStatus = applications.map((application) => {
+      const eventKind = eventKindForApplicationStage(application.stage);
+      const hasPendingEvent = Boolean(
+        eventKind &&
+          events.some(
+            (event) =>
+              event.applicationId === application.id &&
+              event.kind === eventKind &&
+              event.status === "待完成",
+          ),
+      );
+      const stageStatus = automaticApplicationStageStatus(application.stage, {
+        hasPendingEvent,
+        keepWaiting: application.stageStatus === "等待结果",
+      });
+      return stageStatus === application.stageStatus
+        ? application
+        : { ...application, stageStatus };
+    });
     return Response.json({
-      applications,
+      applications: applicationsWithAutomaticStatus,
       events,
       resumes,
       preparations,
@@ -209,49 +377,178 @@ export async function POST(request: Request) {
     };
     if (action === "application.save") {
       const values = appSchema.parse(raw.values);
+      const hasScheduleInput = Object.prototype.hasOwnProperty.call(
+        raw,
+        "schedule",
+      );
+      const schedule = hasScheduleInput
+        ? applicationScheduleSchema.parse(raw.schedule)
+        : undefined;
+      const eventKind = eventKindForApplicationStage(values.stage);
+      if (schedule && !eventKind)
+        throw new Error("当前阶段不能创建关联日程");
+      if (
+        schedule?.mode === "upsert" &&
+        schedule.absoluteReminders.some((reminder) => reminder <= new Date())
+      )
+        throw new Error("自定义提醒时间必须在未来，请移除已经过去的时间");
       if (values.resumeId) await own("resume", values.resumeId);
       if (values.stage !== "待投递" && !values.appliedAt)
         throw new Error("请填写实际投递日期");
-      if (id) {
-        await own("application", id);
-        await db.$transaction(async (tx) => {
-          const old = await tx.application.findUniqueOrThrow({ where: { id } });
+      if (id) await own("application", id);
+      const saved = await db.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}))::text`;
+        const old = id
+          ? await tx.application.findUniqueOrThrow({ where: { id } })
+          : null;
+        if (old) {
           if (old.version !== raw.version)
             throw new Error("记录已在其他设备修改，请刷新后重试");
-          const history = old.history as Prisma.JsonArray;
-          history.push({
-            at: new Date().toISOString(),
-            from: `${old.stage} · ${old.stageStatus}`,
-            to: `${values.stage} · ${values.stageStatus}`,
-            resumeId: values.resumeId ?? null,
+        }
+        const applicationId = old?.id || "";
+        const existingEvent =
+          applicationId && eventKind
+            ? await tx.event.findFirst({
+                where: {
+                  ...w,
+                  applicationId,
+                  kind: eventKind,
+                  status: "待完成",
+                },
+                orderBy: { updatedAt: "desc" },
+              })
+            : null;
+        const stageStatus = automaticApplicationStageStatus(values.stage, {
+          hasPendingEvent:
+            schedule?.mode === "upsert" ||
+            (!schedule && Boolean(existingEvent)),
+          keepWaiting:
+            !schedule &&
+            old?.stage === values.stage &&
+            old.stageStatus === "等待结果",
+        });
+        const history = old
+          ? ([...(old.history as Prisma.JsonArray)] as Prisma.JsonArray)
+          : [];
+        history.push({
+          at: new Date().toISOString(),
+          from: old
+            ? `${old.stage} · ${old.stageStatus}`
+            : "新建",
+          to: `${values.stage} · ${stageStatus}`,
+          resumeId: values.resumeId ?? null,
+        });
+        const application = old
+          ? await tx.application.update({
+              where: { id: old.id },
+              data: {
+                ...values,
+                stageStatus,
+                version: { increment: 1 },
+                history,
+              },
+            })
+          : await tx.application.create({
+              data: { ...values, stageStatus, ...w, history },
+            });
+        if (!eventKind || !schedule) return application;
+        const linkedEvent =
+          existingEvent ||
+          (await tx.event.findFirst({
+            where: {
+              ...w,
+              applicationId: application.id,
+              kind: eventKind,
+              status: "待完成",
+            },
+            orderBy: { updatedAt: "desc" },
+          }));
+        if (schedule.mode === "remove") {
+          if (linkedEvent) {
+            await tx.event.update({
+              where: { id: linkedEvent.id },
+              data: { status: "已取消", version: { increment: 1 } },
+            });
+            await tx.notificationJob.updateMany({
+              where: {
+                eventId: linkedEvent.id,
+                state: { in: ["pending", "sending"] },
+              },
+              data: { state: "cancelled" },
+            });
+          }
+          return application;
+        }
+        if (schedule.start) {
+          const events = await tx.event.findMany({
+            where: {
+              ...w,
+              status: "待完成",
+              id: { not: linkedEvent?.id || "" },
+            },
           });
-          const changed = await tx.application.updateMany({
-            where: { id, userId: user.id, version: raw.version },
-            data: { ...values, version: { increment: 1 }, history },
+          if (
+            !schedule.allowConflict &&
+            events.some(
+              (event) =>
+                event.start &&
+                overlaps(
+                  schedule.start!,
+                  schedule.end ?? new Date(schedule.start!.getTime() + 3600000),
+                  event.start,
+                  event.end ?? new Date(event.start.getTime() + 3600000),
+                ),
+            )
+          )
+            throw new Error("时间与已有日程冲突。勾选允许冲突后可继续保存");
+        }
+        if (linkedEvent)
+          await tx.notificationJob.updateMany({
+            where: {
+              eventId: linkedEvent.id,
+              state: { in: ["pending", "sending"] },
+            },
+            data: { state: "cancelled" },
           });
-          if (changed.count !== 1) throw new Error("版本冲突，请刷新");
-        });
-        return Response.json({
-          ok: true,
-          id,
-          version: Number(raw.version) + 1,
-        });
-      } else {
-        const application = await db.application.create({
-          data: {
-            ...values,
-            ...w,
-            history: [
-              { at: new Date().toISOString(), from: "新建", to: values.stage },
-            ],
-          },
-        });
-        return Response.json({
-          ok: true,
-          id: application.id,
-          version: application.version,
-        });
-      }
+        const eventValues = {
+          applicationId: application.id,
+          title: `${values.company} · ${eventKind === "投递" ? "完成投递" : eventKind}`,
+          kind: eventKind,
+          start: schedule.start,
+          end: schedule.end,
+          deadline: schedule.deadline,
+          location: schedule.location,
+          reminderHours: schedule.reminderHours,
+          absoluteReminders: schedule.absoluteReminders,
+          status: "待完成",
+        };
+        const event = linkedEvent
+          ? await tx.event.update({
+              where: { id: linkedEvent.id },
+              data: { ...eventValues, version: { increment: 1 } },
+            })
+          : await tx.event.create({ data: { ...eventValues, ...w } });
+        for (const scheduledAt of allReminderTimes(
+          event.start,
+          event.deadline,
+          event.reminderHours,
+          event.absoluteReminders,
+        ))
+          await tx.notificationJob.create({
+            data: {
+              ...w,
+              eventId: event.id,
+              eventVersion: event.version,
+              scheduledAt,
+            },
+          });
+        return application;
+      });
+      return Response.json({
+        ok: true,
+        id: saved.id,
+        version: saved.version,
+      });
     } else if (action === "event.save") {
       const values = eventSchema.parse(raw.values);
       if (values.absoluteReminders.some((d) => d <= new Date()))
@@ -294,7 +591,8 @@ export async function POST(request: Request) {
               data: { ...values, version: { increment: 1 } },
             })
           : await tx.event.create({ data: { ...values, ...w } });
-        if (item.status === "待完成")
+        if (item.status === "待完成") {
+          await syncApplicationForPendingEvent(tx, user.id, item);
           for (const scheduledAt of allReminderTimes(
             item.start,
             item.deadline,
@@ -309,6 +607,7 @@ export async function POST(request: Request) {
                 scheduledAt,
               },
             });
+        }
       });
     } else if (action === "event.status") {
       await own("event", id);
@@ -325,7 +624,8 @@ export async function POST(request: Request) {
           where: { eventId: id, state: { in: ["pending", "sending"] } },
           data: { state: "cancelled" },
         });
-        if (status === "待完成")
+        if (status === "待完成") {
+          await syncApplicationForPendingEvent(tx, user.id, e);
           for (const scheduledAt of allReminderTimes(
             e.start,
             e.deadline,
@@ -340,45 +640,27 @@ export async function POST(request: Request) {
                 scheduledAt,
               },
             });
-        if (status === "已完成" && e.applicationId) {
-          const a = await tx.application.findFirst({
-            where: { id: e.applicationId, ...w },
-          });
-          if (a && ["测评", "笔试", "面试", "投递"].includes(e.kind)) {
-            const stage = e.kind === "投递" ? "已投递" : e.kind;
-            await tx.application.update({
-              where: { id: a.id },
-              data: {
-                stage,
-                stageStatus: "等待结果",
-                appliedAt: a.appliedAt ?? new Date(),
-                version: { increment: 1 },
-                history: [
-                  ...(a.history as Prisma.JsonArray),
-                  {
-                    at: new Date().toISOString(),
-                    from: a.stage,
-                    to: `${stage} · 等待结果`,
-                  },
-                ],
-              },
-            });
-          }
-        }
+        } else if (status === "已完成")
+          await syncApplicationForCompletedEvent(tx, user.id, e);
+        else await syncApplicationAfterEventRemoval(tx, user.id, e);
       });
     } else if (action === "event.delete") {
       await own("event", id);
-      await db.$transaction([
-        db.notificationJob.updateMany({
+      await db.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}))::text`;
+        const event = await tx.event.findUniqueOrThrow({ where: { id } });
+        await tx.notificationJob.updateMany({
           where: { eventId: id, ...w, state: { in: ["pending", "sending"] } },
           data: { state: "cancelled" },
-        }),
-        db.preparation.updateMany({
+        });
+        await tx.preparation.updateMany({
           where: { eventId: id, ...w },
           data: { eventId: null },
-        }),
-        db.event.delete({ where: { id } }),
-      ]);
+        });
+        await tx.event.delete({ where: { id } });
+        if (event.status === "待完成")
+          await syncApplicationAfterEventRemoval(tx, user.id, event);
+      });
     } else if (action === "resume.current") {
       await own("resume", id);
       await db.$transaction(async (tx) => {

@@ -6,6 +6,12 @@ import {
   suggestSlots,
   filterApplications,
 } from "../lib/rules";
+import {
+  applicationStageForEventKind,
+  automaticApplicationStageStatus,
+  completedApplicationStageForEventKind,
+  eventKindForApplicationStage,
+} from "../lib/application-stage";
 describe("日程与提醒规则", () => {
   it("合并相同提醒且跳过已过期时间", () => {
     const now = new Date("2026-09-14T00:00:00Z");
@@ -94,4 +100,26 @@ it("相对与指定时间提醒合并并保留未来时刻", () => {
       now,
     ),
   ).toHaveLength(2);
+});
+
+describe("投递阶段与日程联动", () => {
+  it("映射可安排阶段与日程类型", () => {
+    expect(eventKindForApplicationStage("待投递")).toBe("投递");
+    expect(eventKindForApplicationStage("面试")).toBe("面试");
+    expect(eventKindForApplicationStage("已投递")).toBeNull();
+    expect(applicationStageForEventKind("投递")).toBe("待投递");
+    expect(completedApplicationStageForEventKind("投递")).toBe("已投递");
+  });
+
+  it("根据日程自动计算阶段状态", () => {
+    expect(automaticApplicationStageStatus("测评")).toBe("待安排");
+    expect(
+      automaticApplicationStageStatus("测评", { hasPendingEvent: true }),
+    ).toBe("待完成");
+    expect(
+      automaticApplicationStageStatus("面试", { keepWaiting: true }),
+    ).toBe("等待结果");
+    expect(automaticApplicationStageStatus("已投递")).toBe("等待结果");
+    expect(automaticApplicationStageStatus("Offer")).toBe("等待结果");
+  });
 });
