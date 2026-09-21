@@ -102,6 +102,35 @@ const eventSchema = z
     (v) => !v.start || !v.deadline || (v.end ?? v.start) <= v.deadline,
     "执行时间不能晚于截止时间",
   );
+
+async function createReminderJobs(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  event: {
+    id: string;
+    version: number;
+    start: Date | null;
+    deadline: Date | null;
+    reminderHours: number[];
+    absoluteReminders: Date[];
+  },
+) {
+  const scheduledTimes = allReminderTimes(
+    event.start,
+    event.deadline,
+    event.reminderHours,
+    event.absoluteReminders,
+  );
+  if (!scheduledTimes.length) return;
+  await tx.notificationJob.createMany({
+    data: scheduledTimes.map((scheduledAt) => ({
+      userId,
+      eventId: event.id,
+      eventVersion: event.version,
+      scheduledAt,
+    })),
+  });
+}
 const materialSchema = z
   .object({
     title: text.min(1),
@@ -403,12 +432,12 @@ export async function POST(request: Request) {
       if (values.resumeId) await own("resume", values.resumeId);
       if (values.stage !== "待投递" && !values.appliedAt)
         throw new Error("请填写实际投递日期");
-      if (id) await own("application", id);
       const saved = await db.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}))::text`;
         const old = id
-          ? await tx.application.findUniqueOrThrow({ where: { id } })
+          ? await tx.application.findFirst({ where: { id, ...w } })
           : null;
+        if (id && !old) throw new Error("记录不存在");
         if (old) {
           if (old.version !== raw.version)
             throw new Error("记录已在其他设备修改，请刷新后重试");
@@ -460,17 +489,7 @@ export async function POST(request: Request) {
               data: { ...values, stageStatus, ...w, history },
             });
         if (!eventKind || !schedule) return application;
-        const linkedEvent =
-          existingEvent ||
-          (await tx.event.findFirst({
-            where: {
-              ...w,
-              applicationId: application.id,
-              kind: eventKind,
-              status: "待完成",
-            },
-            orderBy: { updatedAt: "desc" },
-          }));
+        const linkedEvent = existingEvent;
         if (schedule.mode === "remove") {
           if (linkedEvent) {
             await tx.event.update({
@@ -494,6 +513,7 @@ export async function POST(request: Request) {
               status: "待完成",
               id: { not: linkedEvent?.id || "" },
             },
+            select: { id: true, start: true, end: true },
           });
           if (
             !schedule.allowConflict &&
@@ -536,20 +556,7 @@ export async function POST(request: Request) {
               data: { ...eventValues, version: { increment: 1 } },
             })
           : await tx.event.create({ data: { ...eventValues, ...w } });
-        for (const scheduledAt of allReminderTimes(
-          event.start,
-          event.deadline,
-          event.reminderHours,
-          event.absoluteReminders,
-        ))
-          await tx.notificationJob.create({
-            data: {
-              ...w,
-              eventId: event.id,
-              eventVersion: event.version,
-              scheduledAt,
-            },
-          });
+        await createReminderJobs(tx, user.id, event);
         return application;
       });
       return Response.json({
@@ -562,12 +569,18 @@ export async function POST(request: Request) {
       if (values.absoluteReminders.some((d) => d <= new Date()))
         throw Error("自定义提醒时间必须在未来，请移除已经过去的时间");
       if (values.applicationId) await own("application", values.applicationId);
-      if (id) await own("event", id);
       await db.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}))::text`;
+        const old = id
+          ? await tx.event.findFirst({ where: { id, ...w } })
+          : null;
+        if (id && !old) throw new Error("记录不存在");
+        if (old && old.version !== raw.version)
+          throw new Error("日程已更新，请刷新");
         if (values.start) {
           const all = await tx.event.findMany({
             where: { ...w, status: "待完成", id: { not: id || "" } },
+            select: { id: true, start: true, end: true },
           });
           if (
             !raw.allowConflict &&
@@ -584,10 +597,7 @@ export async function POST(request: Request) {
           )
             throw new Error("时间与已有日程冲突。勾选允许冲突后可继续保存");
         }
-        if (id) {
-          const old = await tx.event.findUniqueOrThrow({ where: { id } });
-          if (old.version !== raw.version)
-            throw new Error("日程已更新，请刷新");
+        if (old) {
           await tx.notificationJob.updateMany({
             where: { eventId: id, state: { in: ["pending", "sending"] } },
             data: { state: "cancelled" },
@@ -601,20 +611,7 @@ export async function POST(request: Request) {
           : await tx.event.create({ data: { ...values, ...w } });
         if (item.status === "待完成") {
           await syncApplicationForPendingEvent(tx, user.id, item);
-          for (const scheduledAt of allReminderTimes(
-            item.start,
-            item.deadline,
-            item.reminderHours,
-            item.absoluteReminders,
-          ))
-            await tx.notificationJob.create({
-              data: {
-                ...w,
-                eventId: item.id,
-                eventVersion: item.version,
-                scheduledAt,
-              },
-            });
+          await createReminderJobs(tx, user.id, item);
         }
       });
     } else if (action === "event.status") {
@@ -634,20 +631,7 @@ export async function POST(request: Request) {
         });
         if (status === "待完成") {
           await syncApplicationForPendingEvent(tx, user.id, e);
-          for (const scheduledAt of allReminderTimes(
-            e.start,
-            e.deadline,
-            e.reminderHours,
-            e.absoluteReminders,
-          ))
-            await tx.notificationJob.create({
-              data: {
-                ...w,
-                eventId: e.id,
-                eventVersion: e.version,
-                scheduledAt,
-              },
-            });
+          await createReminderJobs(tx, user.id, e);
         } else if (status === "已完成")
           await syncApplicationForCompletedEvent(tx, user.id, e);
         else await syncApplicationAfterEventRemoval(tx, user.id, e);

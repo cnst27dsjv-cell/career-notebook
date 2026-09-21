@@ -43,7 +43,7 @@ export function ApplicationForm({
   item?: Application;
   onClose: () => void;
 }) {
-  const { data, refresh } = useWorkspace();
+  const { data, refresh, notify } = useWorkspace();
   const [stage, setStage] = useState(item?.stage || "待投递");
   const applicationId = item?.id;
   const initialEventKind = eventKindForApplicationStage(stage);
@@ -255,7 +255,9 @@ export function ApplicationForm({
             ),
           );
           const failed = results.find((result) => result.status === "rejected");
-          await refresh();
+          void refresh().catch(() =>
+            notify("已保存，但页面刷新失败，请手动重试。"),
+          );
           if (failed?.status === "rejected")
             throw failed.reason instanceof Error
               ? failed.reason

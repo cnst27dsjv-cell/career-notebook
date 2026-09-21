@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BookOpen,
@@ -42,18 +42,26 @@ export default function Workspace({ demo }: { demo: boolean }) {
   const [toast, setToast] = useState("");
   const [newEvent, setNewEvent] = useState(false);
   const [mobileFiles, setMobileFiles] = useState(false);
+  const refreshPromise = useRef<Promise<void> | null>(null);
   const router = useRouter();
   const pageSound = usePageSound();
-  const refresh = useCallback(async () => {
-    const r = await fetch("/api/data", { cache: "no-store" });
-    if (r.status === 401) {
-      window.location.href = "/login";
-      return;
-    }
-    const result = await r.json();
-    if (!r.ok) throw Error(result.error || "加载失败");
-    setData(result);
-    setError("");
+  const refresh = useCallback(() => {
+    if (refreshPromise.current) return refreshPromise.current;
+    const request = (async () => {
+      const r = await fetch("/api/data", { cache: "no-store" });
+      if (r.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      const result = await r.json();
+      if (!r.ok) throw Error(result.error || "加载失败");
+      setData(result);
+      setError("");
+    })().finally(() => {
+      if (refreshPromise.current === request) refreshPromise.current = null;
+    });
+    refreshPromise.current = request;
+    return request;
   }, []);
   useEffect(() => {
     void refresh().catch((e) => setError(e.message));
@@ -83,7 +91,10 @@ export default function Workspace({ demo }: { demo: boolean }) {
   };
   const mutate = async (v: Record<string, unknown>) => {
     await api("/api/data", v);
-    await refresh();
+    void refresh().catch((e) => {
+      setError(e.message);
+      setToast("已保存，但页面刷新失败，请手动重试。");
+    });
   };
   if (!data)
     return (
