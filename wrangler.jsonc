@@ -9,6 +9,13 @@
     "not_found_handling": "none",
     "binding": "ASSETS",
   },
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "career-notebook.cn",
+      "custom_domain": true,
+    },
+  ],
   "r2_buckets": [
     {
       "binding": "FILES",

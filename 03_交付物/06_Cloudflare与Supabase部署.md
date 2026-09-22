@@ -45,6 +45,8 @@ Cloudflare Git 构建设置（代码与资源验收后使用）：
 - Deploy command：`npx wrangler deploy --config dist/server/wrangler.json`
 - 非生产分支自动构建：初期关闭
 
+正式域名使用 `career-notebook.cn`。域名实名成功后，先在 Cloudflare 添加该域名并把腾讯云的 DNS 服务器改为 Cloudflare 分配的两个 nameserver；Cloudflare zone 激活后，`wrangler.jsonc` 中的 custom domain route 会在部署时把 `career-notebook.cn` 绑定到 Worker。生产环境的 `APP_URL` 和 `BETTER_AUTH_URL` 也应设为 `https://career-notebook.cn`，否则验证邮件、提醒链接和登录回调仍会指向旧地址。
+
 部署后检查登录、账号隔离、文件上传下载、Word 提取、资料保存、邮件验证及 Cron 提醒。构建成功不等于上述外部服务已经通过验收。
 
 参考：
