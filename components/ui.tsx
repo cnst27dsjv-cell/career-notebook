@@ -39,12 +39,16 @@ export function Form({
   submit = "保存",
   onClose,
   disabled = false,
+  closeOnSubmitStart = false,
+  onError,
 }: {
   children: React.ReactNode;
   onSubmit: (f: FormData) => Promise<void>;
   submit?: string;
   onClose?: () => void;
   disabled?: boolean;
+  closeOnSubmitStart?: boolean;
+  onError?: (message: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -56,10 +60,13 @@ export function Form({
         setBusy(true);
         setError("");
         try {
+          if (closeOnSubmitStart) onClose?.();
           await onSubmit(f);
-          onClose?.();
+          if (!closeOnSubmitStart) onClose?.();
         } catch (e) {
-          setError(e instanceof Error ? e.message : "保存失败");
+          const message = e instanceof Error ? e.message : "保存失败";
+          setError(message);
+          onError?.(message);
         } finally {
           setBusy(false);
         }

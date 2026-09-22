@@ -569,7 +569,7 @@ export async function POST(request: Request) {
       if (values.absoluteReminders.some((d) => d <= new Date()))
         throw Error("自定义提醒时间必须在未来，请移除已经过去的时间");
       if (values.applicationId) await own("application", values.applicationId);
-      await db.$transaction(async (tx) => {
+      const item = await db.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}))::text`;
         const old = id
           ? await tx.event.findFirst({ where: { id, ...w } })
@@ -613,11 +613,13 @@ export async function POST(request: Request) {
           await syncApplicationForPendingEvent(tx, user.id, item);
           await createReminderJobs(tx, user.id, item);
         }
+        return item;
       });
+      return Response.json({ ok: true, event: item });
     } else if (action === "event.status") {
       await own("event", id);
       const status = z.enum(["待完成", "已完成", "已取消"]).parse(raw.status);
-      await db.$transaction(async (tx) => {
+      const item = await db.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}))::text`;
         const old = await tx.event.findUniqueOrThrow({ where: { id } });
         if (old.version !== raw.version) throw new Error("日程已更新，请刷新");
@@ -635,7 +637,9 @@ export async function POST(request: Request) {
         } else if (status === "已完成")
           await syncApplicationForCompletedEvent(tx, user.id, e);
         else await syncApplicationAfterEventRemoval(tx, user.id, e);
+        return e;
       });
+      return Response.json({ ok: true, event: item });
     } else if (action === "event.delete") {
       await own("event", id);
       await db.$transaction(async (tx) => {
@@ -653,6 +657,7 @@ export async function POST(request: Request) {
         if (event.status === "待完成")
           await syncApplicationAfterEventRemoval(tx, user.id, event);
       });
+      return Response.json({ ok: true, deletedEventId: id });
     } else if (action === "resume.current") {
       await own("resume", id);
       await db.$transaction(async (tx) => {

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import type { Application, Event, Material, Prep } from "@/lib/types";
+import type { Application, Data, Event, Material, Prep } from "@/lib/types";
 import { kinds, stages, outcomes } from "@/lib/types";
 import { api, useWorkspace, inputDate, iso } from "./context";
 import { Modal, Form, Field } from "./ui";
@@ -575,39 +575,78 @@ export function EventForm({
   item?: Partial<Event>;
   onClose: () => void;
 }) {
-  const { data, mutate, notify } = useWorkspace();
+  const { data, mutateOptimistic, notify } = useWorkspace();
+  const applyEvent = (event: Event) => (current: Data): Data => ({
+    ...current,
+    events: current.events.some((item) => item.id === event.id)
+      ? current.events.map((item) => (item.id === event.id ? event : item))
+      : [...current.events, event],
+  });
+  const removeEvent = (id: string) => (current: Data): Data => ({
+    ...current,
+    events: current.events.filter((event) => event.id !== id),
+  });
+  const updateEventStatus = (id: string, status: string) =>
+    (current: Data): Data => ({
+      ...current,
+      events: current.events.map((event) =>
+        event.id === id
+          ? { ...event, status, version: event.version + 1 }
+          : event,
+      ),
+    });
   return (
     <Modal title={item?.id ? "调整日程" : "写下一项安排"} onClose={onClose}>
       <Form
         onClose={onClose}
-        onSubmit={async (f) =>
-          mutate({
-            action: "event.save",
-            id: item?.id,
-            version: item?.version,
-            allowConflict: f.get("allowConflict") === "on",
-            values: {
-              title: val(f, "title"),
-              kind: val(f, "kind"),
-              applicationId: val(f, "applicationId") || null,
-              start: iso(f.get("start")),
-              end: iso(f.get("end")),
-              deadline: iso(f.get("deadline")),
-              location: val(f, "location"),
-              notes: val(f, "notes"),
-              reminderHours: [
-                ...f.getAll("reminderHours").map(Number),
-                ...(val(f, "customHours")
-                  ? [Number(val(f, "customHours"))]
-                  : []),
-              ],
-              absoluteReminders: f
-                .getAll("absoluteReminder")
-                .filter(Boolean)
-                .map((v) => iso(v)),
+        closeOnSubmitStart
+        onError={notify}
+        onSubmit={async (f) => {
+          const values = {
+            title: val(f, "title"),
+            kind: val(f, "kind"),
+            applicationId: val(f, "applicationId") || null,
+            start: iso(f.get("start")),
+            end: iso(f.get("end")),
+            deadline: iso(f.get("deadline")),
+            location: val(f, "location"),
+            notes: val(f, "notes"),
+            reminderHours: [
+              ...f.getAll("reminderHours").map(Number),
+              ...(val(f, "customHours") ? [Number(val(f, "customHours"))] : []),
+            ],
+            absoluteReminders: f
+              .getAll("absoluteReminder")
+              .filter(Boolean)
+              .map((v) => iso(v))
+              .filter((v): v is string => Boolean(v)),
+          };
+          const event: Event = {
+            id: item?.id || `optimistic-${crypto.randomUUID()}`,
+            applicationId: values.applicationId,
+            title: values.title,
+            kind: values.kind,
+            start: values.start,
+            end: values.end,
+            deadline: values.deadline,
+            status: item?.status || "待完成",
+            location: values.location,
+            notes: values.notes,
+            reminderHours: values.reminderHours,
+            absoluteReminders: values.absoluteReminders,
+            version: (item?.version || 0) + 1,
+          };
+          await mutateOptimistic(
+            {
+              action: "event.save",
+              id: item?.id,
+              version: item?.version,
+              allowConflict: f.get("allowConflict") === "on",
+              values,
             },
-          })
-        }
+            applyEvent(event),
+          );
+        }}
       >
         <Field label="日程名称">
           <input
@@ -722,14 +761,19 @@ export function EventForm({
           <button
             className="secondary"
             onClick={async () => {
+              const eventId = item.id!;
+              const status = item.status === "已完成" ? "待完成" : "已完成";
+              onClose();
               try {
-                await mutate({
-                  action: "event.status",
-                  id: item.id,
-                  version: item.version,
-                  status: item.status === "已完成" ? "待完成" : "已完成",
-                });
-                onClose();
+                await mutateOptimistic(
+                  {
+                    action: "event.status",
+                    id: eventId,
+                    version: item.version,
+                    status,
+                  },
+                  updateEventStatus(eventId, status),
+                );
               } catch (e) {
                 notify((e as Error).message);
               }
@@ -750,9 +794,13 @@ export function EventForm({
             onClick={async () => {
               if (!window.confirm("删除这项日程？尚未发送的提醒将取消。"))
                 return;
+              const eventId = item.id!;
+              onClose();
               try {
-                await mutate({ action: "event.delete", id: item.id });
-                onClose();
+                await mutateOptimistic(
+                  { action: "event.delete", id: eventId },
+                  removeEvent(eventId),
+                );
               } catch (e) {
                 notify((e as Error).message);
               }

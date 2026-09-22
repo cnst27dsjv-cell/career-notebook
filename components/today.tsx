@@ -13,7 +13,7 @@ import { SectionHead, Empty } from "./ui";
 import { EventForm, ApplicationForm } from "./forms";
 import type { Event, Application } from "@/lib/types";
 export default function Today({ navigate }: { navigate: (v: string) => void }) {
-  const { data, mutate, notify } = useWorkspace();
+  const { data, mutateOptimistic, notify } = useWorkspace();
   const [edit, setEdit] = useState<Event>();
   const [app, setApp] = useState<Application>();
   const today = dayKey(new Date());
@@ -37,16 +37,25 @@ export default function Today({ navigate }: { navigate: (v: string) => void }) {
   );
   const completed = todayEvents.filter((e) => e.status === "已完成").length;
   async function done(e: Event) {
+    const status = e.status === "已完成" ? "待完成" : "已完成";
     try {
-      await mutate({
-        action: "event.status",
-        id: e.id,
-        version: e.version,
-        status: e.status === "已完成" ? "待完成" : "已完成",
-      });
-      notify(
-        e.status === "已完成" ? "已恢复这项安排" : "又完成了一步，做得不错。",
+      await mutateOptimistic(
+        {
+          action: "event.status",
+          id: e.id,
+          version: e.version,
+          status,
+        },
+        (current) => ({
+          ...current,
+          events: current.events.map((event) =>
+            event.id === e.id
+              ? { ...event, status, version: event.version + 1 }
+              : event,
+          ),
+        }),
       );
+      notify(e.status === "已完成" ? "已恢复这项安排" : "又完成了一步，做得不错。");
     } catch (err) {
       notify(err instanceof Error ? err.message : "操作失败");
     }

@@ -89,12 +89,34 @@ export default function Workspace({ demo }: { demo: boolean }) {
     window.history.pushState(null, "", "/?view=" + v);
     setMobileFiles(false);
   };
-  const mutate = async (v: Record<string, unknown>) => {
-    await api("/api/data", v);
+  const backgroundRefresh = useCallback(() => {
     void refresh().catch((e) => {
       setError(e.message);
       setToast("已保存，但页面刷新失败，请手动重试。");
     });
+  }, [refresh]);
+  const mutate = async (v: Record<string, unknown>) => {
+    await api("/api/data", v);
+    backgroundRefresh();
+  };
+  const mutateOptimistic = async (
+    v: Record<string, unknown>,
+    apply: (current: Data) => Data,
+  ) => {
+    let previous: Data | undefined;
+    setData((current) => {
+      if (!current) return current;
+      previous = current;
+      return apply(current);
+    });
+    try {
+      const result = await api("/api/data", v);
+      backgroundRefresh();
+      return result;
+    } catch (e) {
+      if (previous) setData(previous);
+      throw e;
+    }
   };
   if (!data)
     return (
@@ -122,7 +144,9 @@ export default function Workspace({ demo }: { demo: boolean }) {
       </main>
     );
   return (
-    <Context.Provider value={{ data, refresh, mutate, notify: setToast }}>
+    <Context.Provider
+      value={{ data, refresh, mutate, mutateOptimistic, notify: setToast }}
+    >
       <a href="#main" className="skip-link">
         跳到主要内容
       </a>

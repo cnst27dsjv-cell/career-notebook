@@ -6,6 +6,10 @@ export const Context = createContext<{
   refresh: () => Promise<void>;
   notify: (s: string) => void;
   mutate: (v: Record<string, unknown>) => Promise<void>;
+  mutateOptimistic: (
+    v: Record<string, unknown>,
+    apply: (current: Data) => Data,
+  ) => Promise<unknown>;
 }>({} as never);
 export const useWorkspace = () => useContext(Context);
 export const dayKey = (d: string | Date) =>
