@@ -94,6 +94,17 @@ try {
   });
   assert.equal(event.absoluteReminders.length, 1);
   check("界面自定义提醒时间持久化");
+  await page
+    .locator(".fc-event-title")
+    .filter({ hasText: "自定义提醒面试" })
+    .click();
+  await page.getByRole("button", { name: "标记已完成" }).click();
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page
+    .locator(".fc-event-title")
+    .filter({ hasText: "✓ 自定义提醒面试" })
+    .waitFor();
+  check("日历完成按钮立即关闭弹窗并更新日历，无需手动刷新");
   await page.goto("http://127.0.0.1:3040/?view=preparations&event=" + event.id);
   await page.getByRole("dialog").waitFor();
   await page.getByLabel("公司", { exact: true }).fill("甲公司");

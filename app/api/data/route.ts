@@ -281,6 +281,7 @@ export async function GET(request: Request) {
   try {
     const user = await userFor(request);
     const w = { userId: user.id };
+    const full = new URL(request.url).searchParams.get("scope") !== "core";
     const [
       applications,
       events,
@@ -296,48 +297,67 @@ export async function GET(request: Request) {
     ] = await Promise.all([
       db.application.findMany({ where: w, orderBy: { updatedAt: "desc" } }),
       db.event.findMany({ where: w, orderBy: { start: "asc" } }),
-      db.resume.findMany({ where: w, orderBy: { createdAt: "desc" } }),
-      db.preparation.findMany({ where: w, orderBy: { updatedAt: "desc" } }),
-      db.material.findMany({
-        where: { ...w, archived: false },
-        orderBy: { updatedAt: "desc" },
-      }),
-      db.materialRole.findMany({ where: w, orderBy: { createdAt: "asc" } }),
-      db.interview.findMany({ where: w, orderBy: { updatedAt: "desc" } }),
-      db.fileAsset.findMany({
-        where: w,
-        select: {
-          id: true,
-          applicationId: true,
-          purpose: true,
-          sortOrder: true,
-          name: true,
-          mime: true,
-          size: true,
-        },
-      }),
-      db.settings.upsert({
-        where: { userId: user.id },
-        create: { userId: user.id },
-        update: {},
-      }),
-      db.notificationJob.findMany({
-        where: w,
-        orderBy: { scheduledAt: "desc" },
-        take: 100,
-      }),
+      full
+        ? db.resume.findMany({ where: w, orderBy: { createdAt: "desc" } })
+        : Promise.resolve([]),
+      full
+        ? db.preparation.findMany({
+            where: w,
+            orderBy: { updatedAt: "desc" },
+          })
+        : Promise.resolve([]),
+      full
+        ? db.material.findMany({
+            where: { ...w, archived: false },
+            orderBy: { updatedAt: "desc" },
+          })
+        : Promise.resolve([]),
+      full
+        ? db.materialRole.findMany({
+            where: w,
+            orderBy: { createdAt: "asc" },
+          })
+        : Promise.resolve([]),
+      full
+        ? db.interview.findMany({
+            where: w,
+            orderBy: { updatedAt: "desc" },
+          })
+        : Promise.resolve([]),
+      full
+        ? db.fileAsset.findMany({
+            where: w,
+            select: {
+              id: true,
+              applicationId: true,
+              purpose: true,
+              sortOrder: true,
+              name: true,
+              mime: true,
+              size: true,
+            },
+          })
+        : Promise.resolve([]),
+      db.settings.findUnique({ where: { userId: user.id } }),
+      full
+        ? db.notificationJob.findMany({
+            where: w,
+            orderBy: { scheduledAt: "desc" },
+            take: 100,
+          })
+        : Promise.resolve([]),
       db.heartbeat.findUnique({ where: { id: "reminders" } }),
     ]);
     const applicationsWithAutomaticStatus = applications.map((application) => {
       const eventKind = eventKindForApplicationStage(application.stage);
       const hasPendingEvent = Boolean(
         eventKind &&
-          events.some(
-            (event) =>
-              event.applicationId === application.id &&
-              event.kind === eventKind &&
-              event.status === "待完成",
-          ),
+        events.some(
+          (event) =>
+            event.applicationId === application.id &&
+            event.kind === eventKind &&
+            event.status === "待完成",
+        ),
       );
       const stageStatus = automaticApplicationStageStatus(application.stage, {
         hasPendingEvent,
@@ -348,6 +368,7 @@ export async function GET(request: Request) {
         : { ...application, stageStatus };
     });
     return Response.json({
+      partial: !full,
       applications: applicationsWithAutomaticStatus,
       events,
       resumes,
@@ -357,10 +378,13 @@ export async function GET(request: Request) {
       interviews,
       files,
       settings: {
-        email: settings.email,
-        emailVerified: settings.emailVerified,
-        availability: settings.availability,
-        availabilityConfirmed: settings.availabilityConfirmed,
+        email: settings?.email || "",
+        emailVerified: settings?.emailVerified || false,
+        availability: settings?.availability || {
+          weekdays: [19, 22],
+          weekends: [9, 18],
+        },
+        availabilityConfirmed: settings?.availabilityConfirmed || false,
       },
       jobs,
       services: {

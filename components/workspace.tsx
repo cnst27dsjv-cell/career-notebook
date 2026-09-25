@@ -43,20 +43,35 @@ export default function Workspace({ demo }: { demo: boolean }) {
   const [newEvent, setNewEvent] = useState(false);
   const [mobileFiles, setMobileFiles] = useState(false);
   const refreshPromise = useRef<Promise<void> | null>(null);
+  const initialLoadComplete = useRef(false);
+  const dataRevision = useRef(0);
+  const activeMutations = useRef(0);
+  const refreshQueued = useRef(false);
   const router = useRouter();
   const pageSound = usePageSound();
   const refresh = useCallback(() => {
+    if (activeMutations.current > 0) {
+      refreshQueued.current = true;
+      return Promise.resolve();
+    }
     if (refreshPromise.current) return refreshPromise.current;
+    const revision = dataRevision.current;
+    const initial = !initialLoadComplete.current;
     const request = (async () => {
-      const r = await fetch("/api/data", { cache: "no-store" });
+      const r = await fetch(initial ? "/api/data?scope=core" : "/api/data", {
+        cache: "no-store",
+      });
       if (r.status === 401) {
         window.location.href = "/login";
         return;
       }
       const result = await r.json();
       if (!r.ok) throw Error(result.error || "加载失败");
-      setData(result);
-      setError("");
+      initialLoadComplete.current = true;
+      if (revision === dataRevision.current && activeMutations.current === 0) {
+        setData(result);
+        setError("");
+      } else refreshQueued.current = true;
     })().finally(() => {
       if (refreshPromise.current === request) refreshPromise.current = null;
     });
@@ -64,7 +79,9 @@ export default function Workspace({ demo }: { demo: boolean }) {
     return request;
   }, []);
   useEffect(() => {
-    void refresh().catch((e) => setError(e.message));
+    void refresh()
+      .then(() => refresh())
+      .catch((e) => setError(e.message));
     const apply = () =>
       setView(
         new URLSearchParams(window.location.search).get("view") || "today",
@@ -90,20 +107,42 @@ export default function Workspace({ demo }: { demo: boolean }) {
     setMobileFiles(false);
   };
   const backgroundRefresh = useCallback(() => {
+    refreshQueued.current = false;
     void refresh().catch((e) => {
       setError(e.message);
       setToast("已保存，但页面刷新失败，请手动重试。");
     });
   }, [refresh]);
+  const beginMutation = () => {
+    activeMutations.current += 1;
+    dataRevision.current += 1;
+  };
+  const finishMutation = () => {
+    activeMutations.current = Math.max(0, activeMutations.current - 1);
+    if (activeMutations.current !== 0) return;
+    const pendingRefresh = refreshPromise.current;
+    if (pendingRefresh) {
+      refreshQueued.current = true;
+      void pendingRefresh.finally(() => {
+        if (activeMutations.current === 0 && refreshQueued.current)
+          backgroundRefresh();
+      });
+    } else backgroundRefresh();
+  };
   const mutate = async (v: Record<string, unknown>) => {
-    await api("/api/data", v);
-    backgroundRefresh();
+    beginMutation();
+    try {
+      await api("/api/data", v);
+    } finally {
+      finishMutation();
+    }
   };
   const mutateOptimistic = async (
     v: Record<string, unknown>,
     apply: (current: Data) => Data,
   ) => {
     let previous: Data | undefined;
+    beginMutation();
     setData((current) => {
       if (!current) return current;
       previous = current;
@@ -111,11 +150,15 @@ export default function Workspace({ demo }: { demo: boolean }) {
     });
     try {
       const result = await api("/api/data", v);
-      backgroundRefresh();
       return result;
     } catch (e) {
-      if (previous) setData(previous);
+      if (previous) {
+        dataRevision.current += 1;
+        setData(previous);
+      }
       throw e;
+    } finally {
+      finishMutation();
     }
   };
   if (!data)

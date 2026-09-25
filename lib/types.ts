@@ -92,6 +92,7 @@ export type Interview = {
   version: number;
 };
 export type Data = {
+  partial?: boolean;
   applications: Application[];
   events: Event[];
   resumes: Resume[];

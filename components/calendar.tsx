@@ -11,7 +11,7 @@ import { EventForm } from "./forms";
 import { AddButton } from "./ui";
 import type { Event } from "@/lib/types";
 export default function Calendar() {
-  const { data, mutate, notify } = useWorkspace();
+  const { data } = useWorkspace();
   const [edit, setEdit] = useState<Partial<Event>>();
   return (
     <>
