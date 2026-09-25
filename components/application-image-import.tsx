@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Eye,
   ImageSquare,
+  LinkSimple,
   Sparkle,
   Trash,
   UploadSimple,
@@ -65,6 +66,8 @@ export function ApplicationImageImport({
   onRecognized,
   onDeleteExisting,
   onBusyChange,
+  url,
+  onUrlChange,
 }: {
   images: PendingApplicationImage[];
   existing: Data["files"];
@@ -76,10 +79,13 @@ export function ApplicationImageImport({
   }) => void;
   onDeleteExisting: (id: string) => Promise<void>;
   onBusyChange: (busy: boolean) => void;
+  url: string;
+  onUrlChange: (url: string) => void;
 }) {
   const [error, setError] = useState("");
   const [notes, setNotes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
   const imagesRef = useRef(images);
   imagesRef.current = images;
   useEffect(
@@ -89,6 +95,7 @@ export function ApplicationImageImport({
   );
 
   const add = (selected: File[]) => {
+    if (busy || linkBusy || !selected.length) return;
     setError("");
     if (existing.length + images.length + selected.length > maximumCount) {
       setError("一条投递最多保留 6 张招聘截图");
@@ -166,49 +173,90 @@ export function ApplicationImageImport({
     }
   };
 
+  const recognizeLink = async () => {
+    if (!url.trim()) return setError("请先粘贴招聘链接");
+    setLinkBusy(true);
+    onBusyChange(true);
+    setError("");
+    setNotes([]);
+    try {
+      const response = await fetch("/api/ai/application-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw Error(result.error || "链接解析失败，请手动填写或上传截图");
+      setNotes(result.notes || []);
+      onRecognized(result);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "链接解析失败，请手动填写或上传截图",
+      );
+    } finally {
+      setLinkBusy(false);
+      onBusyChange(false);
+    }
+  };
+
+  const totalImages = existing.length + images.length;
+  const importing = busy || linkBusy;
+
   return (
     <section className="application-image-import">
       <div className="application-image-heading">
         <div>
           <span className="eyebrow">AI IMPORT</span>
-          <h3>上传招聘截图，让 AI 帮我填写</h3>
-          <p>支持多张图片，按当前顺序识别；保存前可修改所有内容。</p>
+          <h3>导入招聘信息，让 AI 帮我填写</h3>
+          <p>连续拖入多张截图，或粘贴无需登录的公开招聘链接。</p>
         </div>
-        <label className="secondary image-picker">
-          <UploadSimple size={16} />
-          选择图片
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            multiple
-            onChange={(event) => {
-              add(Array.from(event.target.files || []));
-              event.currentTarget.value = "";
-            }}
-          />
-        </label>
+        {totalImages < maximumCount && (
+          <label className="secondary image-picker">
+            <UploadSimple size={16} />
+            选择图片
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              disabled={importing}
+              onChange={(event) => {
+                add(Array.from(event.target.files || []));
+                event.currentTarget.value = "";
+              }}
+            />
+          </label>
+        )}
       </div>
 
-      {!existing.length && !images.length ? (
+      {totalImages < maximumCount ? (
         <label
           className="application-image-drop"
           onDragOver={(event) => event.preventDefault()}
           onDrop={(event) => {
             event.preventDefault();
+            if (importing) return;
             add(Array.from(event.dataTransfer.files));
           }}
         >
           <ImageSquare size={28} />
-          <strong>拖入招聘截图</strong>
-          <span>最多 6 张 · 单张 8 MB · 合计 24 MB</span>
+          <strong>{totalImages ? "继续拖入招聘截图" : "拖入招聘截图"}</strong>
+          <span>已加入 {totalImages} / 6 张 · 单张 8 MB · 合计 24 MB</span>
           <input
             type="file"
             accept="image/png,image/jpeg,image/webp"
             multiple
+            disabled={importing}
             onChange={(event) => add(Array.from(event.target.files || []))}
           />
         </label>
       ) : (
+        <p className="application-image-limit">已达到 6 张图片上限</p>
+      )}
+
+      {(existing.length > 0 || images.length > 0) && (
         <div className="application-image-list">
           {existing.map((image) => (
             <article className="application-image-card saved" key={image.id}>
@@ -286,7 +334,7 @@ export function ApplicationImageImport({
           <button
             type="button"
             className="primary"
-            disabled={busy}
+            disabled={importing}
             onClick={() => void recognize()}
           >
             <Sparkle size={16} />
@@ -294,6 +342,33 @@ export function ApplicationImageImport({
           </button>
         </div>
       )}
+      <div className="application-link-import">
+        <div>
+          <LinkSimple size={18} />
+          <div>
+            <strong>从公开招聘链接解析</strong>
+            <span>需要登录的页面无法读取，可改用截图或手动填写。</span>
+          </div>
+        </div>
+        <div className="application-link-controls">
+          <input
+            type="url"
+            value={url}
+            disabled={importing}
+            onChange={(event) => onUrlChange(event.target.value)}
+            placeholder="粘贴 http:// 或 https:// 招聘链接"
+          />
+          <button
+            type="button"
+            className="secondary"
+            disabled={importing || !url.trim()}
+            onClick={() => void recognizeLink()}
+          >
+            <Sparkle size={16} />
+            {linkBusy ? "正在解析…" : "解析链接"}
+          </button>
+        </div>
+      </div>
       {notes.length > 0 && (
         <div className="recognition-notes">
           <strong>识别提示</strong>

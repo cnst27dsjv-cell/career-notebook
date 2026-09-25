@@ -270,6 +270,8 @@ export function ApplicationForm({
           onChange={setImages}
           onRecognized={applyRecognition}
           onBusyChange={setRecognizing}
+          url={draft.url}
+          onUrlChange={(url) => setDraft((current) => ({ ...current, url }))}
           onDeleteExisting={async (id) => {
             const response = await fetch(`/api/application-images/${id}`, {
               method: "DELETE",
