@@ -46,7 +46,7 @@ export async function POST(r: Request) {
               {
                 mime: "image/png",
                 data: Buffer.from(
-                    "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAI0lEQVR4nGP8//8/AymAiSTVDKMaiANMRKqDg1ENxACSQwkAVW0DHeN02ZEAAAAASUVORK5CYII=",
+                  "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAI0lEQVR4nGP8//8/AymAiSTVDKMaiANMRKqDg1ENxACSQwkAVW0DHeN02ZEAAAAASUVORK5CYII=",
                   "base64",
                 ),
               },
@@ -173,7 +173,26 @@ export async function POST(r: Request) {
         where: {
           ...w,
           archived: false,
-          OR: [{ preparationId: { not: prep.id } }, { preparationId: null }],
+          AND: [
+            {
+              OR: [
+                { preparationId: { not: prep.id } },
+                { preparationId: null },
+              ],
+            },
+            {
+              OR: [
+                { kind: "自我介绍" },
+                ...query
+                  .filter(Boolean)
+                  .flatMap((q) => [
+                    { title: { contains: q } },
+                    { tags: { contains: q } },
+                    { content: { contains: q } },
+                  ]),
+              ],
+            },
+          ],
         },
         take: 100,
         orderBy: { updatedAt: "desc" },

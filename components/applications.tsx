@@ -23,7 +23,13 @@ const fields = [
 ];
 export default function Applications() {
   const { data } = useWorkspace();
-  const [edit, setEdit] = useState<Application | true>();
+  const [edit, setEdit] = useState<Application | true | undefined>(() => {
+    const id =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("record")
+        : null;
+    return data.applications.find((item) => item.id === id);
+  });
   const [q, setQ] = useState("");
   const [filters, setFilters] = useState<Record<string, string[]>>({});
   const [sort, setSort] = useState("updated");

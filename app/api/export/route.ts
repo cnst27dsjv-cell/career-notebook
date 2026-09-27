@@ -58,11 +58,20 @@ export async function GET(r: Request) {
         db.interview.findMany({ where: w }),
         db.fileAsset.findMany({ where: w }),
       ]);
+    const [assistantConversations, assistantMessages, assistantDrafts] =
+      await Promise.all([
+        db.assistantConversation.findMany({ where: w }),
+        db.assistantMessage.findMany({ where: w }),
+        db.draft.findMany({ where: { ...w, kind: "assistant" } }),
+      ]);
     const json = JSON.stringify(
       {
         version: 1,
         exportedAt: new Date(),
         applications,
+        assistantConversations,
+        assistantMessages,
+        assistantDrafts,
         events,
         resumes,
         preparations,

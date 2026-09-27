@@ -12,7 +12,13 @@ import { AddButton } from "./ui";
 import type { Event } from "@/lib/types";
 export default function Calendar() {
   const { data } = useWorkspace();
-  const [edit, setEdit] = useState<Partial<Event>>();
+  const [edit, setEdit] = useState<Partial<Event> | undefined>(() => {
+    const id =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("record")
+        : null;
+    return data.events.find((item) => item.id === id);
+  });
   return (
     <>
       <div className="page-heading">

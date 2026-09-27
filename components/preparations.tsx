@@ -37,7 +37,14 @@ export default function Preparations() {
     (a) => a.id === linkedEvent?.applicationId,
   );
   const [selected, setSelected] = useState<string | undefined>(
-    existingPrep?.id,
+    existingPrep?.id ||
+      (typeof window !== "undefined"
+        ? data.preparations.find(
+            (p) =>
+              p.id ===
+              new URLSearchParams(window.location.search).get("record"),
+          )?.id
+        : undefined),
   );
   const [newPrep, setNewPrep] = useState(!!initialEvent && !existingPrep);
   const [edit, setEdit] = useState<Partial<Material>>();

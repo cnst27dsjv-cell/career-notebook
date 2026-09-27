@@ -831,6 +831,7 @@ export function PrepForm({
           mutate({
             action: "preparation.save",
             id: item?.id,
+            version: item?.version,
             values: {
               company: val(f, "company"),
               role: val(f, "role"),

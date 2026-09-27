@@ -51,6 +51,7 @@ export async function generate(
   system: string,
   input: unknown,
   purpose: ModelPurpose = "default",
+  options?: { maxTokens: number },
 ) {
   const config = getTextModelConfig(purpose);
   const response = await fetch(config.baseUrl + "/chat/completions", {
@@ -72,6 +73,7 @@ export async function generate(
       ],
       response_format: { type: "json_object" },
       temperature: 0.3,
+      ...(options ? { max_tokens: options.maxTokens } : {}),
     }),
     signal: AbortSignal.timeout(60000),
   });

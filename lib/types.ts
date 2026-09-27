@@ -43,6 +43,7 @@ export type Resume = {
   createdAt: string;
 };
 export type Prep = {
+  version: number;
   id: string;
   company: string;
   role: string;
