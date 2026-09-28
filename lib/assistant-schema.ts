@@ -35,6 +35,10 @@ export type AssistantPlan = {
   })[];
   expected: ExpectedRecord[];
   calendarFingerprint?: string;
+  webSearch?: {
+    searchedAt: string;
+    sources: { id: string; label: string; url: string; snippet: string }[];
+  };
   sources: { id: string; label: string }[];
   warnings: string[];
   missing: string[];

@@ -238,6 +238,7 @@ model AssistantMessage {
   content String
   state String @default("complete")
   attempt Int @default(1)
+  webSearch Boolean @default(false)
   responseTo String?
   createdAt DateTime @default(now())
   @@unique([userId, clientId])

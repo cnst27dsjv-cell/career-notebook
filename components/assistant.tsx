@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   PaperPlaneTilt,
-  MoonStars,
   Plus,
   ArrowClockwise,
   Check,
@@ -28,6 +27,7 @@ type Message = {
   content: string;
   state: string;
   clientId: string;
+  webSearch?: boolean;
   createdAt: string;
 };
 type Draft = {
@@ -63,6 +63,7 @@ export default function Assistant() {
   const { refresh } = useWorkspace();
   const [chat, setChat] = useState<Chat>(empty);
   const [input, setInput] = useState("");
+  const [webSearch, setWebSearch] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const [images, setImages] = useState<PendingApplicationImage[]>([]);
@@ -70,7 +71,11 @@ export default function Assistant() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [retry, setRetry] = useState<{ input: string; clientId: string }>();
+  const [retry, setRetry] = useState<{
+    input: string;
+    clientId: string;
+    webSearch?: boolean;
+  }>();
   const [approved, setApproved] = useState<Record<string, boolean>>({});
   const bottom = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -108,10 +113,18 @@ export default function Assistant() {
     }, 4000);
     return () => clearInterval(timer);
   }, [chat.messages, chat.conversation?.id, busy]);
-  async function send(repeat?: { input: string; clientId: string }) {
+  async function send(repeat?: {
+    input: string;
+    clientId: string;
+    webSearch?: boolean;
+  }) {
     const text = repeat?.input || input.trim();
     if (!text || busy) return;
-    const request = repeat || { input: text, clientId: crypto.randomUUID() };
+    const request = repeat || {
+      input: text,
+      clientId: crypto.randomUUID(),
+      webSearch,
+    };
     setBusy(true);
     setError("");
     setRetry(request);
@@ -137,6 +150,7 @@ export default function Assistant() {
               {
                 id: request.clientId,
                 clientId: request.clientId,
+                webSearch: request.webSearch,
                 role: "user",
                 content: text,
                 state: "pending",
@@ -250,9 +264,6 @@ export default function Assistant() {
         <span className="letter-pin" aria-hidden="true" />
         <span className="letter-clip" aria-hidden="true" />
         <header className="letter-heading">
-          <div className="wax-seal" aria-hidden="true">
-            <MoonStars weight="fill" size={38} />
-          </div>
           <h1>AI Assistant</h1>
           <p>智 能 求 职 助 理</p>
           <div className="letter-divider" aria-hidden="true">
@@ -354,12 +365,16 @@ export default function Assistant() {
                 </small>
                 {(m.state === "failed" ||
                   (m.state === "pending" &&
-                    Date.now() - Date.parse(m.createdAt) > 75000)) && (
+                    Date.now() - Date.parse(m.createdAt) > 120000)) && (
                   <button
                     className="letter-text-button"
                     disabled={busy}
                     onClick={() =>
-                      send({ input: m.content, clientId: m.clientId })
+                      send({
+                        input: m.content,
+                        clientId: m.clientId,
+                        webSearch: m.webSearch,
+                      })
                     }
                   >
                     <ArrowClockwise size={14} />
@@ -533,6 +548,29 @@ export default function Assistant() {
                           )}
                         </>
                       )}
+                      {d.result.webSearch && (
+                        <details className="assistant-sources" open>
+                          <summary>
+                            联网来源 · 搜索摘要 ·{" "}
+                            {new Date(
+                              d.result.webSearch.searchedAt,
+                            ).toLocaleString("zh-CN")}
+                          </summary>
+                          <ol>
+                            {d.result.webSearch.sources.map((source) => (
+                              <li key={source.id}>
+                                <a
+                                  href={source.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {source.label || source.url} ↗
+                                </a>
+                              </li>
+                            ))}
+                          </ol>
+                        </details>
+                      )}
                       {!!d.result.sources.length && (
                         <details className="assistant-sources">
                           <summary>
@@ -577,6 +615,15 @@ export default function Assistant() {
           </div>
         )}
         <div className="letter-import">
+          <label className="assistant-web-toggle">
+            <input
+              type="checkbox"
+              checked={webSearch}
+              disabled={busy}
+              onChange={(e) => setWebSearch(e.target.checked)}
+            />{" "}
+            联网搜索
+          </label>
           <button
             className="letter-text-button"
             disabled={busy}
@@ -585,6 +632,11 @@ export default function Assistant() {
             ＋ 招聘截图 / 链接
           </button>
         </div>
+        {webSearch && (
+          <p className="assistant-web-note">
+            会将本次问题发送给 Tavily 搜索，请只填写公开信息；每次发送搜索一次。
+          </p>
+        )}
         <div className="letter-shortcuts">
           {["今日安排", "逾期任务", "安排面试", "准备面试"].map((label, i) => (
             <button

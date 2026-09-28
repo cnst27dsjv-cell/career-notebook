@@ -2880,7 +2880,7 @@ small {
   background:
     repeating-linear-gradient(0deg, transparent 0 28px, #bfac8710 28px 29px),
     linear-gradient(120deg, #f7efd9, #f7f0e5);
-  padding: 30px 38px 20px;
+  padding: 20px 38px 20px;
   box-shadow: 0 6px 18px #24040e60;
   border: 1px solid #d5c7a9;
 }
@@ -2914,35 +2914,20 @@ small {
 }
 .letter-heading {
   text-align: center;
-  padding: 0 0 15px;
-}
-.wax-seal {
-  margin: 0 auto 5px;
-  display: grid;
-  place-items: center;
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  color: #d6af59;
-  background: radial-gradient(circle at 32% 25%, #aa3849, #771c2a 60%, #59101c);
-  border: 5px solid #771c2a;
-  box-shadow:
-    inset 0 0 0 2px #c26b7160,
-    inset 0 0 0 6px #6b1626,
-    2px 5px 9px #5b302a40;
+  padding: 0 0 6px;
 }
 .letter-heading h1 {
   font-family: "Pinyon Script", cursive;
   font-weight: 400;
-  font-size: 62px;
-  line-height: 1.15;
+  font-size: 46px;
+  line-height: 1.1;
   color: var(--wine);
 }
 .letter-heading > p {
   font-family: var(--serif);
   font-size: 15px;
   letter-spacing: 5px;
-  margin: 8px 0 17px;
+  margin: 3px 0 7px;
 }
 .letter-divider {
   display: flex;
@@ -2968,7 +2953,7 @@ small {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 4px 0 20px;
+  margin: 0 0 10px;
   position: relative;
 }
 .assistant-toolbar label {
@@ -2998,7 +2983,7 @@ small {
 }
 .assistant-chat {
   min-height: 210px;
-  max-height: 380px;
+  max-height: 450px;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 9px 3px 15px;
@@ -3281,24 +3266,20 @@ small {
     padding: 10px;
   }
   .assistant-letter {
-    padding: 24px 15px 15px;
+    padding: 16px 15px 15px;
   }
   .assistant-letter:before {
     inset: 6px;
   }
   .letter-heading h1 {
-    font-size: 43px;
-  }
-  .wax-seal {
-    width: 57px;
-    height: 57px;
+    font-size: 35px;
   }
   .letter-heading > p {
     font-size: 12px;
     letter-spacing: 3px;
   }
   .assistant-chat {
-    max-height: 54dvh;
+    max-height: calc(54dvh + 50px);
     min-height: 180px;
   }
   .assistant-stamp {
@@ -3361,3 +3342,7 @@ small {
 .letter-message:has(.action-sheet-title) .letter-message-content {
   width: 85%;
 }
+
+.assistant-web-toggle { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; color: var(--wine, #781b2b); cursor: pointer; }
+.assistant-web-toggle input { width: 16px; height: 16px; accent-color: #781b2b; }
+.assistant-web-note { margin: 0 0 12px; font-size: 13px; color: #806c57; }
