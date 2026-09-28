@@ -16,3 +16,14 @@ test-results/
 
 .dev.vars
 .dev.vars.*
+
+# Local data, backups and credentials
+*.log
+*.sql.gz
+*.dump
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+backups/
+.DS_Store
