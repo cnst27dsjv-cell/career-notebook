@@ -7,10 +7,12 @@ import {
   filterApplications,
 } from "../lib/rules";
 import {
+  applicationStageStatusLabel,
   applicationStageForEventKind,
   automaticApplicationStageStatus,
   completedApplicationStageForEventKind,
   eventKindForApplicationStage,
+  isManuallyCompletableApplicationStage,
 } from "../lib/application-stage";
 describe("日程与提醒规则", () => {
   it("合并相同提醒且跳过已过期时间", () => {
@@ -116,10 +118,34 @@ describe("投递阶段与日程联动", () => {
     expect(
       automaticApplicationStageStatus("测评", { hasPendingEvent: true }),
     ).toBe("待完成");
-    expect(
-      automaticApplicationStageStatus("面试", { keepWaiting: true }),
-    ).toBe("等待结果");
+    expect(automaticApplicationStageStatus("面试", { keepWaiting: true })).toBe(
+      "等待结果",
+    );
     expect(automaticApplicationStageStatus("已投递")).toBe("等待结果");
     expect(automaticApplicationStageStatus("Offer")).toBe("等待结果");
+  });
+
+  it("允许测评、笔试和面试手动完成", () => {
+    expect(isManuallyCompletableApplicationStage("测评")).toBe(true);
+    expect(isManuallyCompletableApplicationStage("待投递")).toBe(false);
+    expect(
+      automaticApplicationStageStatus("测评", {
+        hasPendingEvent: true,
+        stageCompleted: true,
+      }),
+    ).toBe("等待结果");
+    expect(
+      automaticApplicationStageStatus("待投递", { stageCompleted: true }),
+    ).toBe("待安排");
+  });
+
+  it("将已完成阶段显示为下一步等待", () => {
+    expect(applicationStageStatusLabel("测评", "等待结果")).toBe(
+      "已完成 · 等待下一阶段",
+    );
+    expect(applicationStageStatusLabel("面试", "等待结果")).toBe(
+      "已完成 · 等待结果",
+    );
+    expect(applicationStageStatusLabel("已投递", "等待结果")).toBe("等待结果");
   });
 });

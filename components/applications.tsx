@@ -7,6 +7,7 @@ import {
   X,
   Download,
 } from "@phosphor-icons/react";
+import { applicationStageStatusLabel } from "@/lib/application-stage";
 import { useWorkspace, dateLabel } from "./context";
 import { ApplicationForm } from "./forms";
 import { AddButton, Empty } from "./ui";
@@ -182,7 +183,9 @@ export default function Applications() {
                     >
                       {a.outcome || a.stage}
                     </b>
-                    <small className="stage-detail">{a.stageStatus}</small>
+                    <small className="stage-detail">
+                      {applicationStageStatusLabel(a.stage, a.stageStatus)}
+                    </small>
                   </span>
                   <span className="batch-cell">{a.batch}</span>
                   <ArrowUpRight size={18} />

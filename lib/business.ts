@@ -6,6 +6,7 @@ import {
   automaticApplicationStageStatus,
   completedApplicationStageForEventKind,
   eventKindForApplicationStage,
+  isManuallyCompletableApplicationStage,
 } from "./application-stage";
 const text = z.string().trim().max(100000);
 const date = z
@@ -301,6 +302,17 @@ export async function executeBusinessAction(
   };
   if (action === "application.save") {
     const values = appSchema.parse(raw.values);
+    const hasStageCompletedInput = Object.prototype.hasOwnProperty.call(
+      raw,
+      "stageCompleted",
+    );
+    const stageCompleted = z
+      .boolean()
+      .optional()
+      .default(false)
+      .parse(raw.stageCompleted);
+    if (stageCompleted && !isManuallyCompletableApplicationStage(values.stage))
+      throw new Error("当前阶段不能手动标记完成");
     const hasScheduleInput = Object.prototype.hasOwnProperty.call(
       raw,
       "schedule",
@@ -311,6 +323,7 @@ export async function executeBusinessAction(
     const eventKind = eventKindForApplicationStage(values.stage);
     if (schedule && !eventKind) throw new Error("当前阶段不能创建关联日程");
     if (
+      !stageCompleted &&
       schedule?.mode === "upsert" &&
       schedule.absoluteReminders.some((reminder) => reminder <= new Date())
     )
@@ -329,9 +342,9 @@ export async function executeBusinessAction(
           throw new Error("记录已在其他设备修改，请刷新后重试");
       }
       const applicationId = old?.id || "";
-      const existingEvent =
+      const pendingEvents =
         applicationId && eventKind
-          ? await tx.event.findFirst({
+          ? await tx.event.findMany({
               where: {
                 ...w,
                 applicationId,
@@ -340,11 +353,14 @@ export async function executeBusinessAction(
               },
               orderBy: { updatedAt: "desc" },
             })
-          : null;
+          : [];
+      const existingEvent = pendingEvents[0] || null;
       const stageStatus = automaticApplicationStageStatus(values.stage, {
+        stageCompleted,
         hasPendingEvent:
           schedule?.mode === "upsert" || (!schedule && Boolean(existingEvent)),
         keepWaiting:
+          !hasStageCompletedInput &&
           !schedule &&
           old?.stage === values.stage &&
           old.stageStatus === "等待结果",
@@ -371,6 +387,57 @@ export async function executeBusinessAction(
         : await tx.application.create({
             data: { ...values, stageStatus, ...w, history },
           });
+      if (stageCompleted && eventKind) {
+        const pendingEventIds = pendingEvents.map((event) => event.id);
+        if (pendingEventIds.length)
+          await tx.notificationJob.updateMany({
+            where: {
+              eventId: { in: pendingEventIds },
+              state: { in: ["pending", "sending"] },
+            },
+            data: { state: "cancelled" },
+          });
+        if (schedule?.mode === "upsert") {
+          const completedEventValues = {
+            applicationId: application.id,
+            title: `${values.company} · ${eventKind}`,
+            kind: eventKind,
+            start: schedule.start,
+            end: schedule.end,
+            deadline: schedule.deadline,
+            location: schedule.location,
+            reminderHours: schedule.reminderHours,
+            absoluteReminders: schedule.absoluteReminders,
+            status: "已完成",
+          };
+          if (existingEvent)
+            await tx.event.update({
+              where: { id: existingEvent.id },
+              data: {
+                ...completedEventValues,
+                version: { increment: 1 },
+              },
+            });
+          else
+            await tx.event.create({
+              data: { ...completedEventValues, ...w },
+            });
+          const remainingIds = pendingEventIds.filter(
+            (eventId) => eventId !== existingEvent?.id,
+          );
+          if (remainingIds.length)
+            await tx.event.updateMany({
+              where: { id: { in: remainingIds }, ...w },
+              data: { status: "已完成", version: { increment: 1 } },
+            });
+        } else if (pendingEventIds.length) {
+          await tx.event.updateMany({
+            where: { id: { in: pendingEventIds }, ...w },
+            data: { status: "已完成", version: { increment: 1 } },
+          });
+        }
+        return application;
+      }
       if (!eventKind || !schedule) return application;
       const linkedEvent = existingEvent;
       if (schedule.mode === "remove") {

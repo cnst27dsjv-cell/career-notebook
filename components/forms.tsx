@@ -10,7 +10,10 @@ import {
   type ApplicationImageFields,
   type PendingApplicationImage,
 } from "./application-image-import";
-import { eventKindForApplicationStage } from "@/lib/application-stage";
+import {
+  eventKindForApplicationStage,
+  isManuallyCompletableApplicationStage,
+} from "@/lib/application-stage";
 const val = (f: FormData, key: string) => String(f.get(key) || "");
 type ApplicationScheduleDraft = {
   start: string;
@@ -45,6 +48,13 @@ export function ApplicationForm({
 }) {
   const { data, refresh, notify } = useWorkspace();
   const [stage, setStage] = useState(item?.stage || "待投递");
+  const [stageCompleted, setStageCompleted] = useState(
+    Boolean(
+      item &&
+      isManuallyCompletableApplicationStage(item.stage) &&
+      item.stageStatus === "等待结果",
+    ),
+  );
   const applicationId = item?.id;
   const initialEventKind = eventKindForApplicationStage(stage);
   const initialSchedule = data.events.find(
@@ -94,13 +104,14 @@ export function ApplicationForm({
       event.status === "待完成",
   );
   const hasSchedule = Boolean(schedule.start || schedule.deadline);
+  const canCompleteStage = isManuallyCompletableApplicationStage(stage);
   const automaticStatus =
     stage === "已投递"
       ? "等待结果"
-      : hasSchedule
-        ? "待完成"
-        : item?.stage === stage && item.stageStatus === "等待结果"
-          ? "等待结果"
+      : stageCompleted
+        ? "等待结果"
+        : hasSchedule
+          ? "待完成"
           : "待安排";
   const otherPendingEvent = data.events.find(
     (event) =>
@@ -110,6 +121,13 @@ export function ApplicationForm({
   );
   const changeStage = (next: string) => {
     setStage(next);
+    setStageCompleted(
+      Boolean(
+        item?.stage === next &&
+        item.stageStatus === "等待结果" &&
+        isManuallyCompletableApplicationStage(next),
+      ),
+    );
     const nextKind = eventKindForApplicationStage(next);
     const nextEvent = data.events.find(
       (event) =>
@@ -186,7 +204,7 @@ export function ApplicationForm({
                     : [],
                   allowConflict: schedule.allowConflict,
                 }
-              : linkedSchedule
+              : linkedSchedule && !stageCompleted
                 ? { mode: "remove" }
                 : undefined
             : undefined;
@@ -195,6 +213,7 @@ export function ApplicationForm({
             id: persisted?.id || item?.id,
             version: persisted?.version ?? item?.version,
             schedule: schedulePayload,
+            stageCompleted,
             values: {
               company: draft.company,
               role: draft.role,
@@ -357,16 +376,36 @@ export function ApplicationForm({
             </select>
           </Field>
           {stage !== "Offer" && (
-            <Field label="阶段状态（自动）">
-              <div className={`automatic-stage-status status-${automaticStatus}`}>
-                <strong>{automaticStatus}</strong>
-                <span>
-                  {automaticStatus === "待安排"
-                    ? "尚未设置日程"
-                    : automaticStatus === "待完成"
-                      ? "已关联日历安排"
-                      : "等待招聘方后续结果"}
-                </span>
+            <Field label="阶段状态">
+              <div className="stage-status-control">
+                <div
+                  className={`automatic-stage-status status-${automaticStatus}`}
+                >
+                  <strong>{stageCompleted ? "已完成" : automaticStatus}</strong>
+                  <span>
+                    {stageCompleted
+                      ? stage === "面试"
+                        ? "等待面试结果"
+                        : "等待下一阶段"
+                      : automaticStatus === "待安排"
+                        ? "尚未设置日程"
+                        : automaticStatus === "待完成"
+                          ? "已关联日历安排"
+                          : "等待招聘方后续结果"}
+                  </span>
+                </div>
+                {canCompleteStage && (
+                  <label className="check stage-completed-toggle">
+                    <input
+                      type="checkbox"
+                      checked={stageCompleted}
+                      onChange={(event) =>
+                        setStageCompleted(event.target.checked)
+                      }
+                    />
+                    该阶段已完成
+                  </label>
+                )}
               </div>
             </Field>
           )}

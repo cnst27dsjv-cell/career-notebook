@@ -1986,6 +1986,14 @@ small {
   color: var(--muted);
   font-size: 10px;
 }
+.stage-status-control {
+  display: grid;
+  gap: 5px;
+}
+.stage-completed-toggle {
+  min-height: 28px;
+  padding: 0 4px;
+}
 .application-schedule {
   margin: 20px 0;
   padding: 18px;
