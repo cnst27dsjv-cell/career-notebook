@@ -3388,3 +3388,27 @@ small {
   .assistant-file-upload { min-height: 78px; }
   .assistant-file-actions { position: sticky; bottom: -1px; background: var(--paper, #fff9ea); padding-bottom: 4px; }
 }
+
+.letter-composer .assistant-microphone {
+  background: transparent;
+  color: #822432;
+  border: 1px solid #c4b494;
+  box-shadow: none;
+}
+.letter-composer .assistant-microphone[aria-pressed="true"] {
+  background: #822432;
+  color: #fff4db;
+  animation: voice-listening 1.5s ease-in-out infinite;
+}
+.assistant-voice-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #806451;
+  margin: 8px 4px 0;
+}
+@keyframes voice-listening {
+  50% { box-shadow: 0 0 0 5px #82243220; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .letter-composer .assistant-microphone[aria-pressed="true"] { animation: none; }
+}

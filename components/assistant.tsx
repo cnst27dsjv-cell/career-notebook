@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   PaperPlaneTilt,
+  Microphone,
   Plus,
   ArrowClockwise,
   Check,
@@ -24,6 +25,9 @@ import {
   AssistantFilePicker,
   type AssistantFile,
 } from "./assistant-file-picker";
+
+import { useSpeechRecognition } from "./use-speech-recognition";
+import { mergeSpeechInput } from "@/lib/speech-input";
 
 type Conversation = { id: string; title: string };
 type Message = {
@@ -88,6 +92,15 @@ export default function Assistant() {
   const [approved, setApproved] = useState<Record<string, boolean>>({});
   const bottom = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const voice = useSpeechRecognition({
+    onTranscript: (text) => {
+      setInput((current) => mergeSpeechInput(current, text));
+      composer.current?.focus();
+    },
+  });
+  useEffect(() => {
+    if (busy) voice.cancel();
+  }, [busy, voice.cancel]);
   async function load(id?: string) {
     const response = await fetch(
       `/api/assistant${id ? `?id=${encodeURIComponent(id)}` : ""}`,
@@ -129,7 +142,8 @@ export default function Assistant() {
     attachmentIds: string[];
   }) {
     const text = repeat?.input || input.trim();
-    if (!text || busy) return;
+    if (!text || busy || voice.listening || text.length > 12000) return;
+    voice.cancel();
     const request = repeat || {
       input: text,
       clientId: crypto.randomUUID(),
@@ -308,6 +322,7 @@ export default function Assistant() {
               disabled={busy || loading}
               value={chat.conversation?.id || ""}
               onChange={async (e) => {
+                voice.cancel();
                 setLoading(true);
                 setError("");
                 setRetry(undefined);
@@ -334,6 +349,7 @@ export default function Assistant() {
             className="letter-text-button"
             disabled={busy}
             onClick={async () => {
+              voice.cancel();
               setBusy(true);
               setError("");
               try {
@@ -745,14 +761,37 @@ export default function Assistant() {
             maxLength={12000}
             disabled={busy}
           />
+          {voice.supported && (
+            <button
+              type="button"
+              className="assistant-microphone"
+              aria-label={voice.listening ? "停止语音输入" : "开始语音输入"}
+              aria-pressed={voice.listening}
+              title={voice.listening ? "停止语音输入" : "开始语音输入"}
+              disabled={busy || loading || voice.stopping}
+              onClick={voice.listening ? voice.stop : voice.start}
+            >
+              <Microphone size={22} weight={voice.listening ? "fill" : "regular"} />
+            </button>
+          )}
           <button
             type="submit"
             aria-label="发送消息"
-            disabled={busy || !input.trim()}
+            disabled={busy || voice.listening || input.length > 12000 || !input.trim()}
           >
             <PaperPlaneTilt size={24} weight="fill" />
           </button>
         </form>
+        <div className="assistant-voice-note" role="status" aria-live="polite">
+          {voice.error || (voice.supported === false
+            ? "当前浏览器不支持语音输入，可使用系统键盘的麦克风。"
+            : voice.listening
+              ? voice.stopping ? "正在整理最后一句，请稍候…" : "正在聆听… 再点麦克风结束，核对文字后发送。"
+              : voice.supported ? "语音由浏览器识别，可能使用在线服务；本站不保存录音。" : "")}
+        </div>
+        {input.length > 12000 && (
+          <p className="assistant-voice-note" role="alert">文字超过 12000 字，请删减后发送；已识别内容保留在输入框中。</p>
+        )}
         <p className="letter-footnote">
           会使用相关投递、日程与资料节选 · 选中的文件可读取正文 ·
           修改经你确认后保存
