@@ -1,8 +1,8 @@
 # AI Assistant Voice Input Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
-**Goal:** Add a microphone control that converts Chinese speech into editable assistant input without uploading or storing audio.
+**Goal:** Add a microphone control that converts Chinese speech into editable assistant input without the application uploading or storing audio. Browser recognition may use an online service.
 
 **Architecture:** A focused client Hook owns browser capability detection and the `SpeechRecognition` lifecycle. Small pure helpers normalize transcript insertion and browser errors so the Node test suite can exercise user-visible behavior; the existing assistant component only connects the Hook to its controlled textarea and renders state.
 
@@ -37,39 +37,39 @@
 
 **Interfaces:**
 - Consumes: browser globals `window.SpeechRecognition` or `window.webkitSpeechRecognition` when present.
-- Produces: `mergeSpeechInput(current: string, transcript: string): string`, `collectFinalTranscript(results: SpeechResultListLike): string`, `speechErrorMessage(code: string): string`, and `useSpeechRecognition({ onTranscript }): { supported: boolean | null; listening: boolean; error: string; start(): void; stop(): void; clearError(): void }`. A `null` support value means capability detection has not completed, preventing a false unsupported message during hydration.
+- Produces: `mergeSpeechInput(current: string, transcript: string): string`, `collectFinalTranscript(results: SpeechResultListLike): string`, `speechErrorMessage(code: string): string`, and `useSpeechRecognition({ onTranscript }): { supported: boolean | null; listening: boolean; stopping: boolean; error: string; start(): void; stop(): void; cancel(): void }`. A `null` support value means capability detection has not completed, preventing a false unsupported message during hydration.
 
-- [ ] **Step 1: Write failing pure-helper tests**
+- [x] **Step 1: Write failing pure-helper tests**
 
 Add tests asserting that `mergeSpeechInput` trims an empty transcript, preserves empty/current text, inserts one separator after existing text, and preserves ordered Chinese/English terms. Test `collectFinalTranscript` with multiple ordered final segments plus an ignored interim segment. Add tests asserting distinct messages for `not-allowed`/`service-not-allowed`, `no-speech`, `audio-capture`, and an unknown failure.
 
-- [ ] **Step 2: Run the focused test and verify failure**
+- [x] **Step 2: Run the focused test and verify failure**
 
 Run: `npm test -- tests/speech-input.test.ts`
 
 Expected: FAIL because `lib/speech-input.ts` does not exist.
 
-- [ ] **Step 3: Implement the pure helpers**
+- [x] **Step 3: Implement the pure helpers**
 
 Create the exact exported signatures `mergeSpeechInput(current: string, transcript: string): string`, `collectFinalTranscript(results: SpeechResultListLike): string`, and `speechErrorMessage(code: string): string` in `lib/speech-input.ts`; keep copy concise and actionable.
 
-- [ ] **Step 4: Run the focused test and verify pass**
+- [x] **Step 4: Run the focused test and verify pass**
 
 Run: `npm test -- tests/speech-input.test.ts`
 
 Expected: all speech-input tests PASS.
 
-- [ ] **Step 5: Implement the Hook**
+- [x] **Step 5: Implement the Hook**
 
-Create `components/use-speech-recognition.ts` as a client Hook. Define the minimal local browser interfaces needed for TypeScript, configure a newly created recognition instance with `lang = "zh-CN"`, `continuous = false`, and `interimResults = false`, collect every final result segment in order, surface normalized errors, and stop/clear the instance on explicit stop and unmount.
+Create `components/use-speech-recognition.ts` as a client Hook. Define the minimal local browser interfaces needed for TypeScript, configure a newly created recognition instance with `lang = "zh-CN"`, `continuous = false`, and `interimResults = false`, collect every final result segment in order, surface normalized errors, and keep final-result callbacks until explicit stop finishes; cancel and clear callbacks on unmount or conversation changes.
 
-- [ ] **Step 6: Run type checking**
+- [x] **Step 6: Run type checking**
 
 Run: `npm run typecheck`
 
 Expected: PASS with no browser-global or React lifecycle errors.
 
-- [ ] **Step 7: Commit the speech boundary**
+- [x] **Step 7: Commit the speech boundary**
 
 ```bash
 git add components/use-speech-recognition.ts lib/speech-input.ts tests/speech-input.test.ts
@@ -86,37 +86,49 @@ git commit -m "feat: add browser speech recognition hook"
 - Consumes: `useSpeechRecognition({ onTranscript })` and `mergeSpeechInput` from Task 1.
 - Produces: a labelled microphone toggle in the existing assistant composer, a live listening status, and an unsupported/error fallback that does not block typing or sending.
 
-- [ ] **Step 1: Connect recognition to controlled input**
+- [x] **Step 1: Connect recognition to controlled input**
 
-Import the Phosphor `Microphone` icon and the Task 1 Hook/helper. Instantiate the Hook with an `onTranscript` callback that uses functional `setInput` plus `mergeSpeechInput`, then refocuses `composer`. Stop recognition before the existing `send()` begins so a late result cannot mutate a submitted message.
+Import the Phosphor `Microphone` icon and the Task 1 Hook/helper. Instantiate the Hook with an `onTranscript` callback that uses functional `setInput` plus `mergeSpeechInput`, then refocuses `composer`. Disable sending until recognition ends, then cancel any stale session before `send()` begins.
 
-- [ ] **Step 2: Render accessible controls and messages**
+- [x] **Step 2: Render accessible controls and messages**
 
 Insert a `type="button"` microphone button before the submit button when supported. Use `aria-label` values `开始语音输入` and `停止语音输入`, `aria-pressed`, and an `assistant-voice-listening` status while active. Show the Hook error beside the composer without reusing the page-level save error; when unsupported, show a short fallback telling the user to use the phone keyboard microphone.
 
-- [ ] **Step 3: Add focused responsive styling**
+- [x] **Step 3: Add focused responsive styling**
 
 Extend the existing composer rules with a neutral microphone appearance, the existing wine-red active treatment, a reduced-motion-safe listening indicator, and compact mobile sizing. Keep the send button visually primary and do not change unrelated assistant layout.
 
-- [ ] **Step 4: Run automated verification**
+- [x] **Step 4: Run automated verification**
 
 Run: `npm test && npm run typecheck && npm run build:vinext`
 
 Expected: all tests PASS, type checking PASS, and the Cloudflare build completes.
 
-- [ ] **Step 5: Verify browser behavior**
+- [x] **Step 5: Verify browser behavior**
 
-Run the local app and confirm in desktop Chrome: permission grant, start, stop, transcript appended to existing text, manual edit, and send. Deny permission and confirm the typed draft remains. Check a mobile viewport and an unsupported-browser stub for visible fallback and usable textarea/send controls.
+Run `node scripts/assistant-voice-check.mjs` against the real component in Chrome with simulated recognition events. Verify start/stop, appended final text, manual edit/send, denied permission, service failure, overlength drafts, and cancellation during conversation/shortcut/dialog transitions. Check a mobile viewport and unsupported-browser fallback.
 
-- [ ] **Step 6: Commit the assistant integration**
+- [ ] Manual follow-up on a real device: grant microphone access and verify spoken Chinese recognition. Automation above validates interactions, not recognition quality or network availability.
+
+- [x] **Step 6: Commit the assistant integration**
 
 ```bash
 git add components/assistant.tsx app/globals.css
 git commit -m "feat: add voice input to assistant"
 ```
 
-- [ ] **Step 7: Final branch check**
+- [x] **Step 7: Final branch check**
 
 Run: `git status --short && git log -3 --oneline`
 
 Expected: clean working tree with the design, speech boundary, and assistant integration commits present.
+
+## Verification record
+
+- Pure-helper tests first failed for the missing helper module, then passed (8 tests).
+- Full suite: 94 tests passed; TypeScript check and Cloudflare build passed.
+- `node scripts/assistant-voice-check.mjs` exercises the actual assistant component with a simulated browser recognition service: ordered final text, duplicate events, tail after stop, manual editing/sending, permission and silence errors, conversation/shortcut/dialog cancellation, unmount, overlength drafts, service errors, unsupported fallback, and a 375 px viewport. It does not use private account data or call an AI model.
+- Real microphone authorization and recognition quality require a manual test on the user's browser; not validated by this automation.
+- Sending is disabled while listening or waiting for the last result. Recognized text exceeding 12000 characters stays editable and must be shortened before sending.
+
+Final review: fixed delayed speech crossing shortcut or dialog transitions. A regression first failed because recognition was not aborted; after cancellation was added, the full browser check passed. No deferred code findings.

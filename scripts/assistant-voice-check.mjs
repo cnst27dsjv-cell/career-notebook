@@ -49,12 +49,13 @@ const url = `http://127.0.0.1:${server.httpServer.address().port}`;
 try {
   const page = await browser.newPage();
   const posts = [];
-  await page.route("**/api/assistant*", async (route) => {
+  await page.route("**/api/assistant**", async (route) => {
     const request = route.request();
     if (request.method() === "POST") posts.push(request.postDataJSON());
     await route.fulfill({
-      json:
-        request.method() === "POST"
+      json: request.url().endsWith("/files")
+        ? { resumes: [], files: [] }
+        : request.method() === "POST"
           ? { id: "test-chat" }
           : { conversations: [], conversation: null, messages: [], drafts: [] },
     });
@@ -140,6 +141,24 @@ try {
     .waitFor();
   assert.equal(await input.inputValue(), "保留的草稿");
   await start.click();
+  await page.evaluate(() => window.recognizers.at(-1).fail("network"));
+  await page
+    .getByText("语音识别暂时不可用，请稍后重试", { exact: true })
+    .waitFor();
+  await expect(input).toHaveValue("保留的草稿");
+  await input.fill("字".repeat(11998));
+  await start.click();
+  await page.evaluate(() => {
+    const r = window.recognizers.at(-1);
+    r.result(["最后一句"]);
+    r.end();
+  });
+  await expect(input).toHaveValue("字".repeat(11998) + " 最后一句");
+  await expect(page.getByRole("button", { name: "发送消息" })).toBeDisabled();
+  await page.getByText("文字超过 12000 字", { exact: false }).waitFor();
+  await input.fill("删减后的草稿");
+  await expect(page.getByRole("button", { name: "发送消息" })).toBeEnabled();
+  await start.click();
   await page.evaluate(() => window.recognizers.at(-1).end());
   await page.getByText("没有识别到语音，请再说一次", { exact: true }).waitFor();
   await start.click();
@@ -151,6 +170,32 @@ try {
     () => document.querySelector("textarea").value === "",
   );
   assert.equal(await input.inputValue(), "");
+  await start.click();
+  await page.getByRole("button", { name: "今日安排", exact: false }).click();
+  const shortcutDraft = await input.inputValue();
+  await page.evaluate(() =>
+    window.recognizers.at(-1).result(["旧语音不能混入"]),
+  );
+  await expect(input).toHaveValue(shortcutDraft);
+  assert.equal(
+    await page.evaluate(() => window.recognizers.at(-1).aborted),
+    true,
+  );
+  for (const name of ["招聘截图 / 链接", "文件"]) {
+    await start.click();
+    await page.getByRole("button", { name, exact: name === "文件" }).click();
+    await page.getByRole("dialog").waitFor();
+    assert.equal(
+      await page.evaluate(() => window.recognizers.at(-1).aborted),
+      true,
+    );
+    await page.evaluate(() =>
+      window.recognizers.at(-1).result(["旧语音不能混入"]),
+    );
+    await page.getByRole("button", { name: "关闭", exact: true }).click();
+    await expect(input).toHaveValue(shortcutDraft);
+  }
+  await input.fill("");
   await page.setViewportSize({ width: 375, height: 812 });
   await start.click();
   await page.screenshot({
@@ -197,7 +242,7 @@ try {
     true,
   );
   console.log(
-    "PASS: transcript append/deduplication, stop tail, manual edit/send, permissions, silence, conversation cancellation, unmount, mobile layout, unsupported fallback",
+    "PASS: transcript append/deduplication, stop tail, manual edit/send, permissions, service errors, length limit, silence, conversation/shortcut/dialog cancellation, unmount, mobile layout, unsupported fallback",
   );
 } finally {
   await browser.close();

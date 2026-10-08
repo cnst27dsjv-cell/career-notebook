@@ -572,6 +572,7 @@ export default function Assistant() {
                                 className="secondary"
                                 disabled={busy}
                                 onClick={() => {
+                                  voice.cancel();
                                   setInput("请修改刚才的草稿：");
                                   composer.current?.focus();
                                 }}
@@ -688,14 +689,20 @@ export default function Assistant() {
           <button
             className="letter-text-button"
             disabled={busy}
-            onClick={() => setImportOpen(true)}
+            onClick={() => {
+              voice.cancel();
+              setImportOpen(true);
+            }}
           >
             ＋ 招聘截图 / 链接
           </button>
           <button
             className="letter-text-button"
             disabled={busy}
-            onClick={() => setFileOpen(true)}
+            onClick={() => {
+              voice.cancel();
+              setFileOpen(true);
+            }}
           >
             <Paperclip size={15} />
             文件
@@ -712,6 +719,7 @@ export default function Assistant() {
               key={label}
               disabled={busy}
               onClick={() => {
+                voice.cancel();
                 setInput(shortcuts[i]);
                 composer.current?.focus();
               }}

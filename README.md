@@ -119,6 +119,7 @@ npm run build:vinext   # Cloudflare 构建
 
 - `scripts/integration-check.ts`：应用、文件、提醒和导出流程，需要本地服务与 worker。
 - `scripts/assistant-check.ts`：对话草稿、账号隔离、并发确认与界面；加 `--model` 会调用真实模型。
+- `node scripts/assistant-voice-check.mjs`：语音输入浏览器交互检查，模拟识别服务，不连接数据库、不调用 AI。真实麦克风仍需手动验收。
 - `scripts/assistant-search-check.ts`：真实搜索、来源保存和界面检查，会消耗 Tavily 与文本模型额度。
 - `scripts/flows-check.ts`：首次开户流程，仅适用于没有个人账号的独立测试库。
 
@@ -131,3 +132,9 @@ TypeScript 脚本可通过 `npx tsx --env-file=.env scripts/脚本名.ts` 运行
 提交 Issue 时请使用虚构数据复现，删除请求中的 Cookie、Authorization、邮箱、个人经历和密钥。发现泄露时先撤销或轮换凭据，再清理文件与历史；只删除当前文件不能消除历史中的内容。
 
 欢迎提交不含个人数据的 Bug 报告和改进建议。涉及新功能时，请先说明使用场景和预期行为。
+
+### 助理语音输入
+
+支持浏览器语音识别时，助理输入框会显示麦克风按钮。点击开始，再次点击停止；文字追加到草稿，核对后手动发送。请在 HTTPS 或本机 localhost 页面使用，并允许麦克风权限。不支持的浏览器可使用系统键盘的语音输入。
+
+本站不保存录音；浏览器可能使用在线识别服务，识别是否可用取决于浏览器和网络。此功能无需配置额外的 AI API key。
