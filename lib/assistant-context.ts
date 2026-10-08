@@ -1,7 +1,18 @@
 import { db } from "./db";
 import { suggestSlots } from "./rules";
 
-export async function assistantContext(userId: string, input: string) {
+export type AssistantContextFile = {
+  id: string;
+  name: string;
+  text: string;
+  truncated: boolean;
+};
+
+export async function assistantContext(
+  userId: string,
+  input: string,
+  attachments: AssistantContextFile[] = [],
+) {
   const w = { userId };
   const [applications, events, preparations, resumes, settings] =
     await Promise.all([
@@ -58,6 +69,10 @@ export async function assistantContext(userId: string, input: string) {
       id: m.id,
       label: `资料：${m.title} · v${m.version}`,
     })),
+    ...attachments.map((file) => ({
+      id: file.id,
+      label: `文件：${file.name}${file.truncated ? "（本次读取节选）" : ""}`,
+    })),
   ];
   const slots = settings?.availabilityConfirmed
     ? suggestSlots(
@@ -81,7 +96,10 @@ export async function assistantContext(userId: string, input: string) {
       }),
       timezone: "Asia/Shanghai",
       scope:
-        "当前账号；简历仅元数据，未读取正文；资料为关键词命中的最多10条节选",
+        attachments.length > 0
+          ? "当前账号；只读取本轮或当前对话明确附加的文件；其他简历仍仅有元数据；资料为关键词命中的最多10条节选"
+          : "当前账号；简历仅元数据，未读取正文；资料为关键词命中的最多10条节选",
+      attachments,
       applications: [
         ...matched,
         ...applications.filter((a) => !matched.includes(a)),

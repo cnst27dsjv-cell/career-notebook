@@ -121,6 +121,12 @@ model FileAsset {
   size Int
   key String @unique
   hash String
+  extractedText String @default("")
+  extractionStatus String @default("pending")
+  extractionError String @default("")
+  parserVersion String @default("")
+  extractedAt DateTime?
+  reusable Boolean @default(false)
   createdAt DateTime @default(now())
   @@unique([userId,applicationId,purpose,hash])
   @@index([userId,applicationId,purpose])
@@ -239,6 +245,7 @@ model AssistantMessage {
   state String @default("complete")
   attempt Int @default(1)
   webSearch Boolean @default(false)
+  attachments Json @default("[]")
   responseTo String?
   createdAt DateTime @default(now())
   @@unique([userId, clientId])

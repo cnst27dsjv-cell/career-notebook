@@ -10,7 +10,7 @@ export interface FileBucket {
 
 export function fileStorage(bucket?: FileBucket) {
   const location = (key: string) => {
-    if (!/^[a-zA-Z0-9-]+\.(pdf|docx|png|jpe?g|webp)$/.test(key))
+    if (!/^[a-zA-Z0-9-]+\.(pdf|docx|txt|png|jpe?g|webp)$/.test(key))
       throw new Error("文件标识无效");
     return path.resolve("storage", key);
   };

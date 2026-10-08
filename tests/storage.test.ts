@@ -55,4 +55,10 @@ describe("private object storage", () => {
     await storage.put("application.webp", Buffer.from("RIFFxxxxWEBP"));
     expect(await storage.get("application.webp")).toBeTruthy();
   });
+  it("accepts assistant text document keys", async () => {
+    const storage = fileStorage();
+    await storage.put("assistant-file.txt", Buffer.from("resume"));
+    expect((await storage.get("assistant-file.txt")).toString()).toBe("resume");
+    await storage.delete("assistant-file.txt");
+  });
 });

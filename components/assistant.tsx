@@ -6,6 +6,7 @@ import {
   ArrowClockwise,
   Check,
   PencilSimple,
+  Paperclip,
   X,
 } from "@phosphor-icons/react";
 import { Modal } from "./ui";
@@ -19,6 +20,10 @@ import {
   fieldLabels,
   type AssistantPlan,
 } from "@/lib/assistant-schema";
+import {
+  AssistantFilePicker,
+  type AssistantFile,
+} from "./assistant-file-picker";
 
 type Conversation = { id: string; title: string };
 type Message = {
@@ -28,6 +33,7 @@ type Message = {
   state: string;
   clientId: string;
   webSearch?: boolean;
+  attachments: AssistantFile[];
   createdAt: string;
 };
 type Draft = {
@@ -65,6 +71,8 @@ export default function Assistant() {
   const [input, setInput] = useState("");
   const [webSearch, setWebSearch] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [fileOpen, setFileOpen] = useState(false);
+  const [attachments, setAttachments] = useState<AssistantFile[]>([]);
   const [importBusy, setImportBusy] = useState(false);
   const [images, setImages] = useState<PendingApplicationImage[]>([]);
   const [importUrl, setImportUrl] = useState("");
@@ -75,6 +83,7 @@ export default function Assistant() {
     input: string;
     clientId: string;
     webSearch?: boolean;
+    attachmentIds: string[];
   }>();
   const [approved, setApproved] = useState<Record<string, boolean>>({});
   const bottom = useRef<HTMLDivElement>(null);
@@ -117,6 +126,7 @@ export default function Assistant() {
     input: string;
     clientId: string;
     webSearch?: boolean;
+    attachmentIds: string[];
   }) {
     const text = repeat?.input || input.trim();
     if (!text || busy) return;
@@ -124,7 +134,12 @@ export default function Assistant() {
       input: text,
       clientId: crypto.randomUUID(),
       webSearch,
+      attachmentIds: attachments.map((file) => file.id),
     };
+    const requestAttachments = repeat
+      ? chat.messages.find((message) => message.clientId === repeat.clientId)
+          ?.attachments || []
+      : attachments;
     setBusy(true);
     setError("");
     setRetry(request);
@@ -137,6 +152,7 @@ export default function Assistant() {
         ...request,
       });
       setInput("");
+      setAttachments([]);
       setChat((c) => ({
         ...c,
         conversation: {
@@ -151,6 +167,7 @@ export default function Assistant() {
                 id: request.clientId,
                 clientId: request.clientId,
                 webSearch: request.webSearch,
+                attachments: requestAttachments,
                 role: "user",
                 content: text,
                 state: "pending",
@@ -163,6 +180,7 @@ export default function Assistant() {
       await load(id);
     } catch (e) {
       setError((e as Error).message);
+      setAttachments(requestAttachments);
       if (id) await load(id).catch(() => {});
     } finally {
       setBusy(false);
@@ -260,6 +278,18 @@ export default function Assistant() {
           />
         </Modal>
       )}
+      {fileOpen && (
+        <Modal title="给助理添加文件" wide onClose={() => setFileOpen(false)}>
+          <AssistantFilePicker
+            selected={attachments}
+            onConfirm={(files) => {
+              setAttachments(files);
+              setFileOpen(false);
+              composer.current?.focus();
+            }}
+          />
+        </Modal>
+      )}
       <div className="assistant-letter">
         <span className="letter-pin" aria-hidden="true" />
         <span className="letter-clip" aria-hidden="true" />
@@ -283,6 +313,7 @@ export default function Assistant() {
                 setRetry(undefined);
                 try {
                   await load(e.target.value);
+                  setAttachments([]);
                 } catch (err) {
                   setError((err as Error).message);
                 } finally {
@@ -309,6 +340,7 @@ export default function Assistant() {
                 const c = await api("/api/assistant", { action: "new" });
                 await load(c.id);
                 setInput("");
+                setAttachments([]);
                 setRetry(undefined);
               } catch (e) {
                 setError((e as Error).message);
@@ -354,6 +386,16 @@ export default function Assistant() {
                 </span>
               )}
               <div className="letter-message-content">
+                {!!m.attachments?.length && (
+                  <div className="assistant-message-files">
+                    {m.attachments.map((file) => (
+                      <span key={file.id}>
+                        <Paperclip size={13} />
+                        {file.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="letter-bubble">{m.content}</div>
                 <small>
                   {m.role === "user" ? "你" : "AI Assistant"} ·{" "}
@@ -374,6 +416,9 @@ export default function Assistant() {
                         input: m.content,
                         clientId: m.clientId,
                         webSearch: m.webSearch,
+                        attachmentIds: (m.attachments || []).map(
+                          (file) => file.id,
+                        ),
                       })
                     }
                   >
@@ -631,6 +676,14 @@ export default function Assistant() {
           >
             ＋ 招聘截图 / 链接
           </button>
+          <button
+            className="letter-text-button"
+            disabled={busy}
+            onClick={() => setFileOpen(true)}
+          >
+            <Paperclip size={15} />
+            文件
+          </button>
         </div>
         {webSearch && (
           <p className="assistant-web-note">
@@ -652,6 +705,28 @@ export default function Assistant() {
             </button>
           ))}
         </div>
+        {!!attachments.length && (
+          <div className="assistant-composer-files" aria-label="待发送文件">
+            {attachments.map((file) => (
+              <span key={file.id}>
+                <Paperclip size={13} />
+                {file.name}
+                <button
+                  type="button"
+                  aria-label={`移除 ${file.name}`}
+                  disabled={busy}
+                  onClick={() =>
+                    setAttachments((items) =>
+                      items.filter((item) => item.id !== file.id),
+                    )
+                  }
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <form
           className="letter-composer"
           onSubmit={(e) => {
@@ -679,7 +754,8 @@ export default function Assistant() {
           </button>
         </form>
         <p className="letter-footnote">
-          会使用相关投递、日程与资料节选 · 简历仅元数据 · 修改经你确认后保存
+          会使用相关投递、日程与资料节选 · 选中的文件可读取正文 ·
+          修改经你确认后保存
         </p>
       </div>
     </section>
