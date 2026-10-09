@@ -61,7 +61,7 @@ Expected: all speech-input tests PASS.
 
 - [x] **Step 5: Implement the Hook**
 
-Create `components/use-speech-recognition.ts` as a client Hook. Define the minimal local browser interfaces needed for TypeScript, configure a newly created recognition instance with `lang = "zh-CN"`, `continuous = false`, and `interimResults = false`, collect every final result segment in order, surface normalized errors, and keep final-result callbacks until explicit stop finishes; cancel and clear callbacks on unmount or conversation changes.
+Create `components/use-speech-recognition.ts` as a client Hook. Define the minimal local browser interfaces needed for TypeScript, configure a newly created recognition instance with `lang = "zh-CN"`, `continuous = true`, and `interimResults = false`, collect every final result segment in order, surface normalized errors, and keep final-result callbacks until explicit stop finishes; cancel and clear callbacks on unmount or conversation changes.
 
 - [x] **Step 6: Run type checking**
 
@@ -132,3 +132,5 @@ Expected: clean working tree with the design, speech boundary, and assistant int
 - Sending is disabled while listening or waiting for the last result. Recognized text exceeding 12000 characters stays editable and must be shortened before sending.
 
 Final review: fixed delayed speech crossing shortcut or dialog transitions. A regression first failed because recognition was not aborted; after cancellation was added, the full browser check passed. No deferred code findings.
+
+2026-10-09 correction: use continuous recognition so the first utterance does not end dictation. The browser fixture now models single-result session termination and verifies listening stays active after one utterance, then appends the next exactly once. Real microphone/network behavior still requires device testing.

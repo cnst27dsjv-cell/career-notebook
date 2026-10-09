@@ -77,7 +77,8 @@ export function useSpeechRecognition({
       const recognition = new Constructor();
       active.current = recognition;
       recognition.lang = "zh-CN";
-      recognition.continuous = false;
+      // Keep listening across sentence boundaries; the microphone button stops it.
+      recognition.continuous = true;
       recognition.interimResults = false;
       recognition.onresult = ({ results }) => {
         if (active.current !== recognition) return;

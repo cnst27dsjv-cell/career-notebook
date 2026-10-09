@@ -78,14 +78,18 @@ try {
         this.onend?.();
       }
       result(texts) {
+        if (this.ended || this.aborted) return;
         this.onresult?.({
           results: texts.map((text) => ({
             isFinal: true,
             0: { transcript: text },
           })),
         });
+        // A single-result recognition session ends after its first utterance.
+        if (!this.continuous) this.end();
       }
       end() {
+        this.ended = true;
         this.onend?.();
       }
       fail(error) {
@@ -107,13 +111,17 @@ try {
   );
   await page.evaluate(() => {
     const r = window.recognizers.at(-1);
-    if (
-      r.lang !== "zh-CN" ||
-      r.continuous !== false ||
-      r.interimResults !== false
-    )
+    if (r.lang !== "zh-CN" || r.interimResults !== false)
       throw Error("recognition configuration");
     r.result(["中文 ABS"]);
+  });
+  await expect(input).toHaveValue("已有内容 中文 ABS");
+  await expect(
+    page.getByRole("button", { name: "停止语音输入" }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    const r = window.recognizers.at(-1);
+    r.result(["中文 ABS", "第二段"]);
     r.result(["中文 ABS", "第二段"]);
   });
   await expect(input).toHaveValue("已有内容 中文 ABS 第二段");
@@ -242,7 +250,7 @@ try {
     true,
   );
   console.log(
-    "PASS: transcript append/deduplication, stop tail, manual edit/send, permissions, service errors, length limit, silence, conversation/shortcut/dialog cancellation, unmount, mobile layout, unsupported fallback",
+    "PASS: continuous dictation across utterances, transcript append/deduplication, stop tail, manual edit/send, permissions, service errors, length limit, silence, conversation/shortcut/dialog cancellation, unmount, mobile layout, unsupported fallback",
   );
 } finally {
   await browser.close();
