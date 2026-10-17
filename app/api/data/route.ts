@@ -2,6 +2,7 @@ import {
   eventKindForApplicationStage,
   automaticApplicationStageStatus,
 } from "@/lib/application-stage";
+import { handleInterview } from "@/lib/interview-service";
 import { db } from "@/lib/db";
 import { userFor, failure } from "@/lib/http";
 import { executeBusinessAction, materialSchema } from "@/lib/business";
@@ -128,12 +129,12 @@ export async function GET(request: Request) {
           process.env.VISION_MODEL_API_KEY && process.env.VISION_MODEL_NAME
         ),
         search: !!(
-          process.env.SEARCH_MODEL_API_KEY && process.env.SEARCH_MODEL_NAME
+          process.env.TAVILY_API_KEY
         ),
         generalModel: process.env.TEXT_MODEL_NAME || "",
         polishModel: process.env.TEXT_MODEL_POLISH_NAME || "",
         visionModel: process.env.VISION_MODEL_NAME || "",
-        searchModel: process.env.SEARCH_MODEL_NAME || "",
+        searchModel: process.env.TAVILY_API_KEY ? "Tavily" : "",
         mailMode: process.env.MAIL_MODE || "unconfigured",
         worker: heartbeat?.updatedAt || null,
       },
@@ -298,10 +299,12 @@ export async function POST(request: Request) {
         await own("material", id);
         await db.$transaction(async (tx) => {
           const old = await tx.material.findUniqueOrThrow({ where: { id } });
+          if (["question", "experience", "knowledge"].includes(old.format)) throw Error("请从结构化条目中追加回答或回原文重新整理");
           const r = await tx.material.updateMany({
             where: { id, ...w, version: raw.version },
             data: {
               ...values,
+              ...((old.format === "document" || old.source.startsWith("Obsidian:")) && old.content !== values.content ? { structure: {} } : {}),
               version: { increment: 1 },
               revisions: [
                 ...(old.revisions as Prisma.JsonArray),
@@ -382,58 +385,9 @@ export async function POST(request: Request) {
         "求职手账 · 验证提醒邮箱",
         `点击链接验证收件邮箱（30 分钟内有效）：${process.env.APP_URL}/api/verify?token=${token}\n\n这是一封测试邮件。`,
       );
-    } else if (action === "interview.answer") {
-      await own("interview", id);
-      const index = z.number().int().min(0).max(30).parse(raw.index);
-      const answer = text.parse(raw.answer);
-      const current = await db.interview.findUniqueOrThrow({ where: { id } });
-      if (index >= (current.questions as Prisma.JsonArray).length)
-        throw new Error("问题不存在");
-      const turns = current.turns as Prisma.JsonArray;
-      turns[index] = { answer };
-      const changed = await db.interview.updateMany({
-        where: { id, ...w, version: raw.version },
-        data: { turns, version: { increment: 1 } },
-      });
-      if (!changed.count) throw new Error("会话已更新，请刷新");
-      return Response.json({ ok: true, version: current.version + 1 });
-    } else if (action === "interview.confirm") {
-      await own("interview", id);
-      await db.$transaction(async (tx) => {
-        const current = await tx.interview.findUniqueOrThrow({ where: { id } });
-        const i = z.number().int().min(0).parse(raw.index);
-        const turns = current.turns as Prisma.JsonArray;
-        const turn = turns[i] as Prisma.JsonObject;
-        if (!turn) throw new Error("请先回答");
-        if (turn.confirmed) return;
-        const questions = current.questions as Prisma.JsonArray;
-        const q = questions[i] as Prisma.JsonObject;
-        const content = text.min(1).parse(raw.content);
-        const changed = await tx.interview.updateMany({
-          where: { id, ...w, version: raw.version },
-          data: {
-            version: { increment: 1 },
-            turns: turns.map((v, n) =>
-              n === i ? { ...turn, confirmed: true, suggestion: content } : v,
-            ),
-          },
-        });
-        if (!changed.count) throw new Error("会话已更新，请刷新");
-        await tx.material.create({
-          data: {
-            ...w,
-            preparationId: current.preparationId,
-            title: String(q.question),
-            content,
-            category: "待确认",
-            kind: "边界或分类待确认",
-            source: `模拟面试 ${current.id} 第 ${i + 1} 题`,
-            revisions: [
-              { content: String(turn.answer), at: new Date().toISOString() },
-            ],
-          },
-        });
-      });
+    } else if (action === "interview.answer" || action === "interview.confirm") {
+      const result = await handleInterview(user.id, { ...raw, action: action.split(".")[1] });
+      return Response.json({ ok: true, version: result.version });
     } else throw new Error("不支持的操作");
     return Response.json({ ok: true });
   } catch (e) {

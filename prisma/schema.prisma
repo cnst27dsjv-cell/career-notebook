@@ -159,6 +159,8 @@ model Preparation {
   updatedAt DateTime @updatedAt
 }
 model Material {
+  format String @default("legacy")
+  structure Json @default("{}")
   id String @id @default(cuid())
   userId String
   preparationId String?
@@ -192,6 +194,7 @@ model Interview {
   questions Json
   sources Json @default("[]")
   turns Json @default("[]")
+  state Json @default("{}")
   version Int @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

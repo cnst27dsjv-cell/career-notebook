@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
 import InterviewView from "./interview";
+import InterviewSetup from "./interview-setup";
+import ObsidianLibrary from "./obsidian-library";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -18,13 +20,18 @@ import { useWorkspace, api } from "./context";
 import { PrepForm, MaterialForm } from "./forms";
 import { AddButton, Empty, Modal, Form, Field } from "./ui";
 import type { Material, Prep, Interview } from "@/lib/types";
-import {
-  materialCategories,
-  materialKindsForCategory,
-} from "@/lib/material-import";
+import LibraryOrganizer, { SourceImport } from "./library-organizer";
+import { SourceLibrary, StructuredLibrary, StructuredMaterial } from "./structured-material";
+import { materialFormat } from "@/lib/library-organization";
 export default function Preparations() {
-  const { data, refresh, mutate, notify } = useWorkspace();
+  const { data, refresh, mutate, notify, acceptInterview } = useWorkspace();
   const [tab, setTab] = useState("preps");
+  const [organizing, setOrganizing] = useState<Material>();
+  const libraryMaterials = data.materials.filter((m) => materialFormat(m) === "legacy");
+  function openSource(id: string) {
+    const doc = data.materials.find((m) => m.id === id);
+    if (doc) setOrganizing(doc); else notify("来源原文已归档或不存在；仍可查看入库时保存的原文片段。");
+  }
   const initialEvent =
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("event")
@@ -62,14 +69,17 @@ export default function Preparations() {
   const [libraryScope, setLibraryScope] = useState("");
   const [libraryKind, setLibraryKind] = useState("");
   const [newRole, setNewRole] = useState(false);
+  const [setup, setSetup] = useState(false);
+  const [createdSession, setCreatedSession] = useState<Interview>();
   const [sessionId, setSessionId] = useState<string>();
   const [manualSession, setManualSession] = useState(false);
   const prep = data.preparations.find((p) => p.id === selected);
-  const session = data.interviews.find((s) => s.id === sessionId);
+  const session =
+    createdSession || data.interviews.find((s) => s.id === sessionId);
   const roleNames = [
     ...new Set([
       ...(data.materialRoles || []).map((role) => role.name),
-      ...data.materials
+      ...libraryMaterials
         .filter((material) => material.category === "岗位特有")
         .map((material) => material.roleScope)
         .filter(Boolean),
@@ -78,7 +88,7 @@ export default function Preparations() {
   const selectedRole = libraryScope.startsWith("role:")
     ? libraryScope.slice(5)
     : "";
-  const scopedMaterials = data.materials.filter((material) => {
+  const scopedMaterials = libraryMaterials.filter((material) => {
     if (libraryScope === "general") return material.category === "通用问题";
     if (libraryScope === "pending") return material.category === "待确认";
     if (selectedRole)
@@ -148,24 +158,16 @@ export default function Preparations() {
       setBusy("");
     }
   }
-  async function research() {
-    setBusy("research");
-    try {
-      const r = await api("/api/ai", {
-        action: "research",
-        preparationId: selected,
-      });
-      await refresh();
-      setSessionId(r.id);
-    } catch (e) {
-      notify((e as Error).message);
-    } finally {
-      setBusy("");
-    }
-  }
   if (session)
     return (
-      <InterviewView session={session} onBack={() => setSessionId(undefined)} />
+      <InterviewView
+        key={session.id}
+        session={session}
+        onBack={() => {
+          setSessionId(undefined);
+          setCreatedSession(undefined);
+        }}
+      />
     );
   return (
     <>
@@ -219,10 +221,15 @@ export default function Preparations() {
             }}
           >
             <Files size={17} />
-            资料库 <span>{data.materials.length}</span>
+            旧资料 <span>{libraryMaterials.length}</span>
           </button>
+          <button className={tab === "documents" ? "active" : ""} onClick={() => setTab("documents")}>原始文档 <span>{data.materials.filter((m) => materialFormat(m) === "document").length}</span></button>
+          <button className={tab === "organized" ? "active" : ""} onClick={() => setTab("organized")}>练习库</button>
         </div>
       )}
+      <div className="materials-toolbar">
+        <ObsidianLibrary />
+      </div>
       {!prep && tab === "preps" ? (
         <div className="prep-grid">
           {data.preparations.map((p, i) => (
@@ -254,6 +261,10 @@ export default function Preparations() {
             <span>为下一次面试做准备</span>
           </button>
         </div>
+      ) : !prep && tab === "documents" ? (
+        <SourceLibrary onOpen={setOrganizing} onImport={() => setImporting(true)} onEdit={setEdit} />
+      ) : !prep && tab === "organized" ? (
+        <StructuredLibrary onSource={openSource} />
       ) : (
         <>
           {prep && (
@@ -274,7 +285,7 @@ export default function Preparations() {
                 <button
                   className="primary"
                   disabled={!!busy}
-                  onClick={research}
+                  onClick={() => setSetup(true)}
                 >
                   <ChatCircleText size={18} />
                   {busy === "research" ? "正在调研与出题…" : "调研并模拟面试"}
@@ -355,7 +366,7 @@ export default function Preparations() {
                     title={role}
                     description="岗位特有资料"
                     count={
-                      data.materials.filter(
+                      libraryMaterials.filter(
                         (m) =>
                           m.category === "岗位特有" && m.roleScope === role,
                       ).length
@@ -367,7 +378,7 @@ export default function Preparations() {
                   title="通用"
                   description="个性与行为面试等通用资料"
                   count={
-                    data.materials.filter((m) => m.category === "通用问题")
+                    libraryMaterials.filter((m) => m.category === "通用问题")
                       .length
                   }
                   onClick={() => setLibraryScope("general")}
@@ -376,7 +387,7 @@ export default function Preparations() {
                   title="待确认"
                   description="需要核对分类的原文"
                   count={
-                    data.materials.filter((m) => m.category === "待确认").length
+                    libraryMaterials.filter((m) => m.category === "待确认").length
                   }
                   onClick={() => setLibraryScope("pending")}
                 />
@@ -469,7 +480,7 @@ export default function Preparations() {
                 )}
               </div>
               <div className="materials-list">
-                {materials.map((m) => (
+                {materials.map((m) => ["question", "experience", "knowledge"].includes(materialFormat(m)) ? <StructuredMaterial key={m.id} item={m} onSource={openSource} /> : (
                   <article className="material-card paper-panel" key={m.id}>
                     <div className="material-head">
                       <span className="status-badge">{m.kind}</span>
@@ -491,6 +502,13 @@ export default function Preparations() {
                       </div>
                     )}
                     <div className="card-actions">
+                      <button className="secondary" disabled={!!busy} onClick={async () => {
+                        setBusy(m.id);
+                        try {
+                          const doc = materialFormat(m) === "document" ? m : await api("/api/library-organizer", { action: "promote", id: m.id, version: m.version });
+                          await refresh(); setOrganizing(doc);
+                        } catch (e) { notify((e as Error).message); } finally { setBusy(""); }
+                      }}>{materialFormat(m) === "document" ? "整理原始文档" : "移至原始文档并拆分"}</button>
                       <button
                         className="text-button"
                         onClick={() => setEdit(m)}
@@ -540,6 +558,18 @@ export default function Preparations() {
               </section>
             )}
         </>
+      )}
+      {organizing && <LibraryOrganizer key={organizing.id} document={organizing} onClose={() => setOrganizing(undefined)} />}
+      {setup && prep && (
+        <InterviewSetup
+          prep={prep}
+          onClose={() => setSetup(false)}
+          onCreated={(s) => {
+            setSetup(false);
+            acceptInterview?.(s);
+            setCreatedSession(s);
+          }}
+        />
       )}
       {manualSession && (
         <Modal title="用自己的问题练习" onClose={() => setManualSession(false)}>
@@ -594,7 +624,7 @@ export default function Preparations() {
         />
       )}{" "}
       {importing && (
-        <ImportModal prepId={prep?.id} onClose={() => setImporting(false)} />
+        <SourceImport prepId={prep?.id} onClose={() => setImporting(false)} onSaved={(m) => { setImporting(false); setOrganizing(m); setTab("documents"); }} />
       )}
       {polish && (
         <Modal
@@ -681,7 +711,13 @@ export default function Preparations() {
                 <p className="pre-wrap">{m.content}</p>
                 <button
                   className="secondary"
-                  onClick={() => {
+                  disabled={!!busy}
+                  onClick={async () => {
+                    if (materialFormat(m) !== "legacy") {
+                      setBusy(m.id);
+                      try { await api("/api/library-organizer", { action: "reuse", id: m.id, version: m.version, preparationId: selected }); await refresh(); setReuse(undefined); notify("已复用到本次准备，保留回答版本与来源。"); } catch (e) { notify((e as Error).message); } finally { setBusy(""); }
+                      return;
+                    }
                     setReuse(undefined);
                     setEdit({
                       title: m.title,
@@ -695,7 +731,7 @@ export default function Preparations() {
                     });
                   }}
                 >
-                  复用并编辑
+                  {materialFormat(m) === "legacy" ? "复用并编辑" : "复用到本次准备"}
                   <ArrowUpRight size={15} />
                 </button>
               </article>
@@ -760,288 +796,4 @@ function LibraryFolder({
 }
 function ArrowRightIcon() {
   return <ArrowUpRight size={16} />;
-}
-function ImportModal({
-  prepId,
-  onClose,
-}: {
-  prepId?: string;
-  onClose: () => void;
-}) {
-  const { data, mutate, notify } = useWorkspace();
-  const [text, setText] = useState("");
-  const [source, setSource] = useState("粘贴文字");
-  const [importKey] = useState(() => crypto.randomUUID());
-  const [busy, setBusy] = useState(false);
-  const [items, setItems] = useState<
-    {
-      sourceIndex: number;
-      title: string;
-      content: string;
-      category: string;
-      kind: string;
-      roleScope: string;
-      confidence: number;
-      selected: boolean;
-    }[]
-  >();
-  const [coverage, setCoverage] = useState<{
-    complete: boolean;
-    sourceCount: number;
-    classifiedCount: number;
-    pendingCount: number;
-    inputChars: number;
-    outputChars: number;
-  }>();
-  const [error, setError] = useState("");
-  async function upload(file: File) {
-    setBusy(true);
-    setError("");
-    try {
-      const f = new FormData();
-      f.set("file", file);
-      f.set("mode", "import");
-      const r = await fetch("/api/files", { method: "POST", body: f });
-      const result = await r.json();
-      if (!r.ok) throw Error(result.error);
-      setText(result.text);
-      setSource(result.name);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <Modal title="导入已有准备资料" onClose={onClose} wide>
-      {!items ? (
-        <>
-          <Field label="上传 Word DOCX（最大 10 MB）">
-            <input
-              type="file"
-              accept=".docx"
-              disabled={busy}
-              onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
-            />
-          </Field>
-          <Field label="或粘贴文字 / 核对提取内容">
-            <textarea
-              rows={12}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="把以前整理的自我介绍、面试问题和回答粘贴到这里…"
-            />
-          </Field>
-          {error && <p className="error">{error}</p>}
-          <p className="help">
-            导入后先预览，不会直接加入资料库。AI
-            分类会把这段文字发送到你配置的模型服务。
-          </p>
-          <div className="form-footer">
-            <button
-              className="secondary"
-              disabled={!text.trim() || busy}
-              onClick={() =>
-                setItems([
-                  {
-                    sourceIndex: 0,
-                    title: "导入的面试准备",
-                    content: text,
-                    category: "待确认",
-                    kind: "边界或分类待确认",
-                    roleScope: "",
-                    confidence: 0,
-                    selected: true,
-                  },
-                ])
-              }
-            >
-              作为一份资料整理
-            </button>
-            <button
-              className="primary"
-              disabled={!text.trim() || busy}
-              onClick={async () => {
-                setBusy(true);
-                setError("");
-                try {
-                  const r = await api("/api/ai", {
-                    action: "import",
-                    input: text,
-                  });
-                  setCoverage(r.coverage);
-                  setItems(
-                    r.items.map((i: object) => ({ ...i, selected: true })),
-                  );
-                } catch (e) {
-                  setError((e as Error).message);
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              {busy ? "正在处理…" : "助理拆分与分类"}
-            </button>
-          </div>
-        </>
-      ) : (
-        <Form
-          submit="确认选中资料入库"
-          onClose={onClose}
-          onSubmit={async () => {
-            await mutate({
-              action: "material.import",
-              key: importKey,
-              items: items
-                .filter((i) => i.selected)
-                .map((m) => ({
-                  title: m.title,
-                  content: m.content,
-                  category: m.category,
-                  kind: m.kind,
-                  roleScope: m.roleScope,
-                  source,
-                  preparationId: prepId || null,
-                })),
-            });
-            notify("资料已加入资料库");
-          }}
-        >
-          {coverage && (
-            <div
-              className={`import-summary ${coverage.complete ? "complete" : "error"}`}
-            >
-              <strong>
-                {coverage.complete
-                  ? "已覆盖全部原文"
-                  : "原文覆盖不完整，请勿直接入库"}
-              </strong>
-              <span>
-                共 {coverage.sourceCount} 段 · 已分类 {coverage.classifiedCount}{" "}
-                段 · 待确认 {coverage.pendingCount} 段
-              </span>
-            </div>
-          )}
-          <datalist id="import-material-role-options">
-            {(data.materialRoles || []).map((role) => (
-              <option key={role.id} value={role.name} />
-            ))}
-          </datalist>
-          {items.map((m, i) => (
-            <div
-              className={`import-item ${m.category === "待确认" ? "pending" : ""}`}
-              key={m.sourceIndex}
-            >
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={m.selected}
-                  onChange={(e) =>
-                    setItems(
-                      items.map((v, j) =>
-                        j === i ? { ...v, selected: e.target.checked } : v,
-                      ),
-                    )
-                  }
-                />
-                保存这一份
-              </label>
-              <div className="form-grid import-classification">
-                <Field label="一级类目">
-                  <select
-                    value={m.category}
-                    onChange={(e) => {
-                      const category = e.target.value;
-                      const kinds = materialKindsForCategory(category);
-                      setItems(
-                        items.map((v, j) =>
-                          j === i
-                            ? {
-                                ...v,
-                                category,
-                                kind: kinds.includes(v.kind)
-                                  ? v.kind
-                                  : kinds[0],
-                                roleScope:
-                                  category === "通用问题" ? "" : v.roleScope,
-                              }
-                            : v,
-                        ),
-                      );
-                    }}
-                  >
-                    {materialCategories.map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="二级类目">
-                  <select
-                    value={m.kind}
-                    onChange={(e) =>
-                      setItems(
-                        items.map((v, j) =>
-                          j === i ? { ...v, kind: e.target.value } : v,
-                        ),
-                      )
-                    }
-                  >
-                    {materialKindsForCategory(m.category).map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="适用岗位">
-                  <input
-                    value={m.roleScope}
-                    list="import-material-role-options"
-                    required={m.category === "岗位特有"}
-                    disabled={m.category === "通用问题"}
-                    placeholder={
-                      m.category === "岗位特有"
-                        ? "例如：私募基金运营"
-                        : "通用问题不需要填写"
-                    }
-                    onChange={(e) =>
-                      setItems(
-                        items.map((v, j) =>
-                          j === i ? { ...v, roleScope: e.target.value } : v,
-                        ),
-                      )
-                    }
-                  />
-                </Field>
-              </div>
-              <Field label="标题">
-                <input
-                  required
-                  value={m.title}
-                  onChange={(e) =>
-                    setItems(
-                      items.map((v, j) =>
-                        j === i ? { ...v, title: e.target.value } : v,
-                      ),
-                    )
-                  }
-                />
-              </Field>
-              <Field label="正文">
-                <textarea
-                  rows={6}
-                  value={m.content}
-                  onChange={(e) =>
-                    setItems(
-                      items.map((v, j) =>
-                        j === i ? { ...v, content: e.target.value } : v,
-                      ),
-                    )
-                  }
-                />
-              </Field>
-            </div>
-          ))}
-        </Form>
-      )}
-    </Modal>
-  );
 }

@@ -10,6 +10,7 @@ import {
 import { applicationStageStatusLabel } from "@/lib/application-stage";
 import { useWorkspace, dateLabel } from "./context";
 import { ApplicationForm } from "./forms";
+import ApplicationProgress from "./application-progress";
 import { AddButton, Empty } from "./ui";
 import { filterApplications } from "@/lib/rules";
 import type { Application } from "@/lib/types";
@@ -159,37 +160,36 @@ export default function Applications() {
                 <span />
               </div>
               {rows.slice((page - 1) * 10, page * 10).map((a, i) => (
-                <button
-                  className="table-row"
-                  key={a.id}
-                  onClick={() => setEdit(a)}
-                >
-                  <span className="company-cell">
-                    <span className={"company-monogram shade-" + (i % 3)}>
-                      {a.company.slice(0, 1)}
+                <div className="application-record" key={a.id}>
+                  <button className="table-row" onClick={() => setEdit(a)}>
+                    <span className="company-cell">
+                      <span className={"company-monogram shade-" + (i % 3)}>
+                        {a.company.slice(0, 1)}
+                      </span>
+                      <span>
+                        <strong>{a.company}</strong>
+                        <small>{a.role}</small>
+                      </span>
                     </span>
+                    <span className="city-cell">{a.city || "未填写"}</span>
+                    <span className="date-cell">{dateLabel(a.appliedAt)}</span>
                     <span>
-                      <strong>{a.company}</strong>
-                      <small>{a.role}</small>
+                      <b
+                        className={
+                          "status-badge " + (a.stage === "面试" ? "accent" : "")
+                        }
+                      >
+                        {a.outcome || a.stage}
+                      </b>
+                      <small className="stage-detail">
+                        {applicationStageStatusLabel(a.stage, a.stageStatus)}
+                      </small>
                     </span>
-                  </span>
-                  <span className="city-cell">{a.city || "未填写"}</span>
-                  <span className="date-cell">{dateLabel(a.appliedAt)}</span>
-                  <span>
-                    <b
-                      className={
-                        "status-badge " + (a.stage === "面试" ? "accent" : "")
-                      }
-                    >
-                      {a.outcome || a.stage}
-                    </b>
-                    <small className="stage-detail">
-                      {applicationStageStatusLabel(a.stage, a.stageStatus)}
-                    </small>
-                  </span>
-                  <span className="batch-cell">{a.batch}</span>
-                  <ArrowUpRight size={18} />
-                </button>
+                    <span className="batch-cell">{a.batch}</span>
+                    <ArrowUpRight size={18} />
+                  </button>
+                  <ApplicationProgress application={a} />
+                </div>
               ))}
             </div>
             <div className="pagination">

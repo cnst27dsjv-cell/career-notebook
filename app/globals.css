@@ -1006,6 +1006,30 @@ small {
 .table-row:hover {
   background: #e8dbc54d;
 }
+.application-record { border-bottom: 1px solid #ded0b880; }
+.application-record > .table-row { border-bottom: 0; padding-bottom: 12px; }
+.application-progress { padding: 0 34px 16px 61px; }
+.application-progress ol { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); list-style: none; padding: 0; margin: 0; }
+.progress-step { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: 11px; }
+.progress-step:not(:first-child)::before { content: ""; position: absolute; top: 8px; right: 50%; width: 100%; border-top: 1px solid var(--line); }
+.progress-step.is-done::before, .progress-step.is-current::before, .progress-step.is-past::before { border-color: #a86b73; }
+.progress-step.is-unrecorded::before { border-top-style: dashed; }
+.progress-dot { position: relative; display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid var(--line); border-radius: 50%; background: var(--paper, #faf5e9); font-size: 10px; line-height: 1; }
+.progress-step.is-done .progress-dot { color: #fff9ef; border-color: var(--wine); background: var(--wine); }
+.progress-step.is-past .progress-dot { border-color: #a86b73; background: #e8d4ce; }
+.progress-step.is-current .progress-dot { border-color: var(--wine); box-shadow: 0 0 0 3px #781b2b14; }
+.progress-step.is-current .progress-stage { color: var(--wine); font-weight: 700; }
+.progress-step.is-current:not(.is-done) .progress-dot::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--wine); }
+.application-progress .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.application-progress .progress-note { min-height: 14px; font-size: 10px; }
+.progress-summary { margin: 6px 0 0; text-align: right; font-size: 11px; color: var(--wine); }
+.application-progress.is-ended .progress-summary { font-weight: 600; }
+.application-progress.is-ended .progress-dot { box-shadow: none; }
+@media (max-width: 720px) {
+  .application-progress { padding: 4px 0 14px; }
+  .progress-step { font-size: 10px; }
+  .progress-summary { text-align: left; margin-top: 8px; }
+}
 .company-cell {
   display: flex;
   align-items: center;
@@ -3411,4 +3435,33 @@ small {
 }
 @media (prefers-reduced-motion: reduce) {
   .letter-composer .assistant-microphone[aria-pressed="true"] { animation: none; }
+}
+
+/* Selected interview context and local note exchange. */
+.practice-material-picker { max-height: 18rem; overflow-y: auto; display: grid; gap: .75rem; margin: 1rem 0; }
+.practice-material-picker .checkbox-label { display: flex; align-items: flex-start; gap: .6rem; }
+.practice-material-picker input[type="checkbox"] { width: auto; flex: 0 0 auto; margin-top: .2rem; }
+.practice-material-picker small { color: var(--muted); }
+
+/* Original documents and their reviewed practice items. */
+.organizer-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 24px; align-items: start; }
+.organizer-columns > section { min-width: 0; }
+.organizer-source-label { display: block; overflow-wrap: anywhere; }
+.organizer-segments select { width: 100%; min-width: 0; }
+.organizer-source { max-height: 65vh; overflow: auto; overflow-wrap: anywhere; padding: 16px; margin: 12px 0; border: 1px solid var(--border, #dacdb5); background: #fffcf4; }
+.organizer-source mark { background: #f5d997; }
+.organizer-item { border: 1px solid var(--border, #dacdb5); padding: 18px; margin-bottom: 16px; }
+.organizer-item fieldset { min-width: 0; border: 0; padding: 0; margin: 12px 0 0; }
+.organizer-item input:not([type=checkbox]), .organizer-item textarea, .organizer-item select { width: 100%; min-width: 0; }
+.organizer-actions { flex-wrap: wrap; gap: 10px; }
+.organizer-actions > span { margin-right: auto; }
+.organized-library .material-card, .organizer-item, .source-snippet { overflow-wrap: anywhere; }
+.answer-versions > details { padding: 12px 0; border-bottom: 1px solid var(--border, #dacdb5); margin-bottom: 12px; }
+.answer-versions summary { cursor: pointer; }
+.organized-library .materials-toolbar input { flex: 1; min-width: 160px; }
+@media (max-width: 720px) {
+  .organizer-columns { grid-template-columns: minmax(0, 1fr); }
+  .organizer-source { max-height: 35vh; }
+  .organizer-actions > button { width: 100%; }
+  .organizer-item { padding: 12px; }
 }

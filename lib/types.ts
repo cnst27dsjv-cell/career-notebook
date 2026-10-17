@@ -54,6 +54,8 @@ export type Prep = {
   resumeId: string | null;
 };
 export type Material = {
+  format?: string;
+  structure?: import("./library-organization").MaterialStructure;
   id: string;
   preparationId: string | null;
   title: string;
@@ -83,6 +85,22 @@ export type Turn = {
   suggestion?: string;
   feedback?: string;
   confirmed?: boolean;
+  materialId?: string;
+  history?: (Omit<Turn, "history"> & { at: string })[];
+};
+export type InterviewState = {
+  started?: boolean;
+  index?: number;
+  completedAt?: string;
+  review?: string;
+  reviewHistory?: { content: string; at: string }[];
+  researchError?: string;
+  generationError?: string;
+  context?: {
+    company: string; role: string; round: string; jd: string;
+    materials: { id: string; title: string; content: string; version: number; truncated: boolean }[];
+    resume?: { name: string; content: string; truncated: boolean };
+  };
 };
 export type Interview = {
   id: string;
@@ -90,6 +108,7 @@ export type Interview = {
   questions: Question[];
   sources: Source[];
   turns: Turn[];
+  state?: InterviewState;
   version: number;
 };
 export type Data = {

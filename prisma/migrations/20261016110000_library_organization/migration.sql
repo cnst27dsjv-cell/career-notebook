@@ -1,0 +1,1 @@
+ALTER TABLE "Material" ADD COLUMN "format" TEXT NOT NULL DEFAULT 'legacy', ADD COLUMN "structure" JSONB NOT NULL DEFAULT '{}';

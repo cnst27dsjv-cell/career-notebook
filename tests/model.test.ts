@@ -92,3 +92,34 @@ describe("Grok 联网搜索结果", () => {
     ).toThrow("没有返回可核对的来源");
   });
 });
+
+it("interactive DeepSeek requests disable default extended thinking, without changing other calls", async () => {
+  const { generate } = await import("../lib/model");
+  vi.stubEnv("TEXT_MODEL_BASE_URL", "https://api.deepseek.com");
+  vi.stubEnv("TEXT_MODEL_API_KEY", "test-key");
+  vi.stubEnv("TEXT_MODEL_NAME", "deepseek-flash");
+  const bodies: any[] = [];
+  vi.stubGlobal("fetch", async (_url: unknown, init: RequestInit) => {
+    bodies.push(JSON.parse(String(init.body)));
+    return Response.json({
+      choices: [{ finish_reason: "stop", message: { content: '{"ok":true}' } }],
+    });
+  });
+  try {
+    await generate("返回JSON", {}, "default", {
+      maxTokens: 4096,
+      thinking: "disabled",
+    } as any);
+    await generate("返回JSON", {});
+    vi.stubEnv("TEXT_MODEL_BASE_URL", "https://other.example/v1");
+    await generate("返回JSON", {}, "default", {
+      maxTokens: 4096,
+      thinking: "disabled",
+    } as any);
+    expect(bodies[0].thinking).toEqual({ type: "disabled" });
+    expect(bodies[1].thinking).toBeUndefined();
+    expect(bodies[2].thinking).toBeUndefined();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

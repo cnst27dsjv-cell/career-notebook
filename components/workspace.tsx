@@ -18,7 +18,7 @@ import {
   SpeakerSlash,
 } from "@phosphor-icons/react";
 import { Context, api } from "./context";
-import type { Data } from "@/lib/types";
+import type { Data, Interview } from "@/lib/types";
 import Today from "./today";
 import Applications from "./applications";
 import Calendar from "./calendar";
@@ -100,6 +100,22 @@ export default function Workspace({ demo }: { demo: boolean }) {
     const t = setTimeout(() => setToast(""), 5500);
     return () => clearTimeout(t);
   }, [toast]);
+  const acceptInterview = useCallback((session: Interview) => {
+    dataRevision.current += 1;
+    setData((current) => {
+      if (!current) return current;
+      const old = current.interviews.find((item) => item.id === session.id);
+      if (old && old.version > session.version) return current;
+      return {
+        ...current,
+        interviews: old
+          ? current.interviews.map((item) =>
+              item.id === session.id ? session : item,
+            )
+          : [session, ...current.interviews],
+      };
+    });
+  }, []);
   const navigate = (v: string) => {
     if (v !== view) pageSound.play();
     setView(v);
@@ -188,7 +204,14 @@ export default function Workspace({ demo }: { demo: boolean }) {
     );
   return (
     <Context.Provider
-      value={{ data, refresh, mutate, mutateOptimistic, notify: setToast }}
+      value={{
+        data,
+        refresh,
+        mutate,
+        mutateOptimistic,
+        acceptInterview,
+        notify: setToast,
+      }}
     >
       <a href="#main" className="skip-link">
         跳到主要内容

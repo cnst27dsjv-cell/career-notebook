@@ -633,6 +633,33 @@ export default function Assistant() {
                           </ol>
                         </details>
                       )}
+                      {!!d.result.materialEvidence?.length && (
+                        <details className="assistant-sources">
+                          <summary>
+                            本次自动查阅的笔记（
+                            {d.result.materialEvidence.length} 篇）
+                          </summary>
+                          {d.result.materialEvidence.map((note) => (
+                            <details key={note.id}>
+                              <summary>
+                                {note.title} · v{note.version} ·{" "}
+                                {note.truncated ? "相关节选" : "正文"}
+                              </summary>
+                              <p>
+                                {note.category} · {note.source}
+                              </p>
+                              <p
+                                style={{
+                                  whiteSpace: "pre-wrap",
+                                  overflowWrap: "anywhere",
+                                }}
+                              >
+                                {note.content}
+                              </p>
+                            </details>
+                          ))}
+                        </details>
+                      )}
                       {!!d.result.sources.length && (
                         <details className="assistant-sources">
                           <summary>

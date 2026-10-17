@@ -39,6 +39,15 @@ export type AssistantPlan = {
     searchedAt: string;
     sources: { id: string; label: string; url: string; snippet: string }[];
   };
+  materialEvidence?: {
+    id: string;
+    title: string;
+    version: number;
+    source: string;
+    content: string;
+    truncated: boolean;
+    category: string;
+  }[];
   sources: { id: string; label: string }[];
   warnings: string[];
   missing: string[];

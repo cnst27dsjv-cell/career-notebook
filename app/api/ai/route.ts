@@ -1,6 +1,8 @@
+import { searchTavily } from "@/lib/tavily";
+import { handleInterview } from "@/lib/interview-service";
 import { db } from "@/lib/db";
 import { userFor, failure } from "@/lib/http";
-import { generate, generateWithImages, searchWeb } from "@/lib/model";
+import { generate, generateWithImages } from "@/lib/model";
 import { z } from "zod";
 import { suggestSlots } from "@/lib/rules";
 import type { Prisma } from "@prisma/client";
@@ -55,7 +57,7 @@ export async function POST(r: Request) {
         );
         return Response.json(result);
       }
-      const result = await searchWeb("OpenAI Next Credits 官方接入指南");
+      const result = await searchTavily("校园招聘 面试准备 官方指南");
       return Response.json({ ok: true, sourceCount: result.sources.length });
     }
     if (action === "polish") {
@@ -327,96 +329,15 @@ export async function POST(r: Request) {
       }
       return Response.json({ ...result, slots });
     }
-    if (action === "research") {
-      const prep = await db.preparation.findFirst({
-        where: { id: raw.preparationId, ...w },
-      });
-      if (!prep) throw Error("面试准备不存在");
-      const research = await searchWeb(
-        `${prep.company} ${prep.role} 招聘 面试 面经`,
-      );
-      const sources = research.sources.map((source, i) => ({
-        id: `source-${i}`,
-        title: source.title,
-        url: source.url,
-        description: "Grok 搜索引用，请打开来源核对全文。",
-        published: "未知",
-        retrievedAt: new Date().toISOString(),
-        kind: "联网引用，未核实全文",
-      }));
-      const result = z
-        .object({
-          questions: z
-            .array(
-              z.object({
-                question: z.string(),
-                sourceIds: z.array(z.string()),
-                basis: z.string(),
-              }),
-            )
-            .min(1)
-            .max(10),
-        })
-        .parse(
-          await generate(
-            "根据公司岗位JD和检索摘要出5道模拟面试题。返回 {questions:[{question,sourceIds,basis}]}。不能称为公司原题。只引用提供的source ID；没有证据则sourceIds为空且basis写明推测练习题。",
-            {
-              company: prep.company,
-              role: prep.role,
-              jd: prep.jd,
-              research: research.text,
-              sources,
-            },
-          ),
-        );
-      if (
-        result.questions.some((q) =>
-          q.sourceIds.some(
-            (id) => !sources.some((s: { id: string }) => s.id === id),
-          ),
-        )
-      )
-        throw Error("来源校验失败，请重试");
-      const interview = await db.interview.create({
-        data: {
-          ...w,
-          preparationId: prep.id,
-          questions: result.questions,
-          sources,
-        },
-      });
-      return Response.json({ id: interview.id });
-    }
-    if (action === "feedback") {
-      const current = await db.interview.findFirst({
-        where: { id: raw.id, ...w },
-      });
-      if (!current) throw Error("会话不存在");
-      const index = z.number().int().min(0).parse(raw.index);
-      const q = (current.questions as Prisma.JsonArray)[index];
-      const turns = current.turns as Prisma.JsonArray;
-      const turn = turns[index] as Prisma.JsonObject;
-      if (!turn?.answer) throw Error("请先保存回答");
-      const result = z
-        .object({ content: z.string(), feedback: z.string() })
-        .parse(
-          await generate(
-            "针对问题和回答给出反馈，并润色为口语逐字稿，不能新增任何个人事实。返回 {content,feedback}。",
-            { question: q, answer: turn.answer },
-            "polish",
-          ),
-        );
-      turns[index] = {
-        ...turn,
-        suggestion: result.content,
-        feedback: result.feedback,
-      };
-      const change = await db.interview.updateMany({
-        where: { id: current.id, version: current.version },
-        data: { turns, version: { increment: 1 } },
-      });
-      if (!change.count) throw Error("回答已修改，请重新润色");
-      return Response.json(result);
+    if (action === "research" || action === "feedback") {
+      // Preserve the old entry point while all new practice actions share one service.
+      let request = raw;
+      if (action === "feedback") {
+        const current = await db.interview.findFirst({ where: { id: raw.id, ...w } });
+        if (!current) throw Error("会话不存在");
+        request = { ...raw, version: current.version };
+      }
+      return Response.json(await handleInterview(user.id, request));
     }
     throw Error("不支持的助理操作");
   } catch (e) {

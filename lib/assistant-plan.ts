@@ -1,3 +1,4 @@
+import { materialCopyFields } from "./material-reuse";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
@@ -292,6 +293,15 @@ export function compilePlan(
       ? calendarFingerprint(ctx.events)
       : undefined,
     sources: sources.filter((s): s is { id: string; label: string } => !!s),
+    materialEvidence: (ctx.model.materials || []).map((m) => ({
+      id: m.id,
+      title: m.title,
+      version: m.version,
+      source: m.source,
+      content: m.content,
+      truncated: m.truncated,
+      category: m.category,
+    })),
     warnings: [...new Set(warnings)],
     missing: [...new Set(missing)],
   });
@@ -405,16 +415,7 @@ export async function executePlan(
       const copy = await tx.material.create({
         data: {
           userId,
-          preparationId: String(values.preparationId),
-          title: source.title,
-          category: source.category,
-          kind: source.kind,
-          roleScope: source.roleScope,
-          content: source.content,
-          tags: source.tags,
-          parentId: source.id,
-          source: `复用 ${source.id} v${source.version}`,
-          revisions: [],
+          ...materialCopyFields(source, String(values.preparationId)),
         },
       });
       savedId = copy.id;

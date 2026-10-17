@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { suggestSlots } from "./rules";
+import { libraryTerms, rankLibrary } from "./assistant-library";
 
 export type AssistantContextFile = {
   id: string;
@@ -12,6 +13,8 @@ export async function assistantContext(
   userId: string,
   input: string,
   attachments: AssistantContextFile[] = [],
+  previousMessages: string[] = [],
+  referencedMaterialIds: string[] = [],
 ) {
   const w = { userId };
   const [applications, events, preparations, resumes, settings] =
@@ -25,32 +28,64 @@ export async function assistantContext(
       }),
       db.settings.findUnique({ where: w }),
     ]);
-  // Search the complete user's library before limiting; older relevant material remains eligible.
-  const terms = [...new Set(input.match(/[\p{L}\p{N}]{2,20}/gu) || [])].slice(
-    0,
-    8,
-  );
   const matched = applications.filter(
     (a) => input.includes(a.company) || input.includes(a.role),
   );
-  const keywords = [...terms, ...matched.flatMap((a) => [a.company, a.role])];
-  const materials = await db.material.findMany({
-    where: {
-      ...w,
-      archived: false,
-      ...(keywords.length
-        ? {
-            OR: keywords.flatMap((q) => [
-              { title: { contains: q } },
-              { content: { contains: q } },
-              { roleScope: { contains: q } },
-            ]),
-          }
-        : {}),
-    },
-    orderBy: { updatedAt: "desc" },
-    take: 10,
-  });
+  const keywords = [
+    ...new Set([
+      ...libraryTerms(input),
+      ...libraryTerms(previousMessages.slice(0, 3).join(" ")),
+    ]),
+  ];
+  const candidates = keywords.length
+    ? await db.material.findMany({
+        where: {
+          ...w,
+          archived: false,
+          OR: keywords.flatMap((q) => [
+            { title: { contains: q, mode: "insensitive" as const } },
+            { content: { contains: q, mode: "insensitive" as const } },
+            { roleScope: { contains: q, mode: "insensitive" as const } },
+            { tags: { contains: q, mode: "insensitive" as const } },
+          ]),
+        },
+        select: {
+          id: true,
+          title: true,
+          content: true,
+          format: true,
+          roleScope: true,
+          tags: true,
+          category: true,
+          source: true,
+          version: true,
+        },
+      })
+    : [];
+  const materials = rankLibrary(candidates, input, previousMessages);
+  // Pending actions must retain their references even when the current topic changes.
+  // Read metadata only; these records are not additional model reading evidence.
+  const referenced = referencedMaterialIds.length
+    ? await db.material.findMany({
+        where: {
+          ...w,
+          archived: false,
+          id: { in: referencedMaterialIds.slice(0, 5) },
+        },
+        select: {
+          id: true,
+          title: true,
+          roleScope: true,
+          tags: true,
+          category: true,
+          source: true,
+          version: true,
+        },
+      })
+    : [];
+  const pendingMaterials = referenced
+    .filter((m) => !materials.some((n) => n.id === m.id))
+    .map((m) => ({ ...m, content: "", truncated: true }));
   const sources = [
     ...applications.map((a) => ({
       id: a.id,
@@ -67,7 +102,11 @@ export async function assistantContext(
     })),
     ...materials.map((m) => ({
       id: m.id,
-      label: `资料：${m.title} · v${m.version}`,
+      label: `资料：${m.title} · v${m.version}${m.truncated ? "（相关节选）" : "（正文）"}`,
+    })),
+    ...pendingMaterials.map((m) => ({
+      id: m.id,
+      label: `资料：${m.title} · v${m.version}（待确认方案引用，仅元数据）`,
     })),
     ...attachments.map((file) => ({
       id: file.id,
@@ -87,7 +126,7 @@ export async function assistantContext(
     events,
     preparations,
     resumes,
-    materials,
+    materials: [...materials, ...pendingMaterials],
     sources,
     model: {
       nowBeijing: new Date().toLocaleString("zh-CN", {
@@ -97,8 +136,8 @@ export async function assistantContext(
       timezone: "Asia/Shanghai",
       scope:
         attachments.length > 0
-          ? "当前账号；只读取本轮或当前对话明确附加的文件；其他简历仍仅有元数据；资料为关键词命中的最多10条节选"
-          : "当前账号；简历仅元数据，未读取正文；资料为关键词命中的最多10条节选",
+          ? "当前账号；只读取本轮或当前对话明确附加的文件；其他简历仍仅有元数据；资料为自动检索的最多6篇正文或相关节选；仅限已导入当前账号的资料，不代表访问本机文件夹"
+          : "当前账号；简历仅元数据，未读取正文；资料为自动检索的最多6篇正文或相关节选；仅限已导入当前账号的资料，不代表访问本机文件夹",
       attachments,
       applications: [
         ...matched,
@@ -122,11 +161,13 @@ export async function assistantContext(
         .slice(0, 30)
         .map((p) => ({ ...p, jd: p.jd.slice(0, 1200) })),
       resumes: resumes.slice(0, 20),
-      materials: materials.map((m) => ({
-        ...m,
-        revisions: undefined,
-        content: m.content.slice(0, 1800),
-      })),
+      materials: [...materials],
+      librarySearch: {
+        matchedCount: materials.length,
+        terms: keywords,
+        scope:
+          "当前账号未归档资料；优先相关的已整理条目（question/experience/knowledge），原始文档（document，或旧 Obsidian 导入）为补充。建议/点评不等于经历事实。关键词检索可能遗漏，请勿声称查阅全部笔记。待确认资料不等于已核实事实。",
+      },
       availabilityConfirmed: settings?.availabilityConfirmed || false,
       availability: settings?.availability,
       oneHourSlots: slots,
@@ -153,6 +194,20 @@ export async function assistantContext(
     list.pop();
     result.model.truncated = true;
   }
+  const included = new Set(result.model.materials.map((m) => m.id));
+  const materialIds = new Set(materials.map((m) => m.id));
+  result.sources = result.sources.flatMap((s) => {
+    if (!materialIds.has(s.id) || included.has(s.id)) return [s];
+    const reference = referenced.find((m) => m.id === s.id);
+    return reference
+      ? [
+          {
+            id: s.id,
+            label: `资料：${reference.title} · v${reference.version}（待确认方案引用，仅元数据）`,
+          },
+        ]
+      : [];
+  });
   return result;
 }
 export type AssistantContext = Awaited<ReturnType<typeof assistantContext>>;
