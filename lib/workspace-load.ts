@@ -6,7 +6,7 @@ export async function loadWorkspaceData(
 ): Promise<Data | null> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25_000);
+    const timeout = setTimeout(() => controller.abort(), 90_000);
     try {
       const response = await fetch(
         initial ? "/api/data?scope=core" : "/api/data",

@@ -7,6 +7,36 @@ afterEach(() => {
 });
 
 describe("workspace loading recovery", () => {
+  it("allows a slow response body to finish instead of canceling a usable connection", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      const signal = init.signal!;
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            const timer = setTimeout(() => {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  '{"applications":[{"id":"slow-but-complete"}]}',
+                ),
+              );
+              controller.close();
+            }, 43_000);
+            signal.addEventListener("abort", () => {
+              clearTimeout(timer);
+              controller.error(signal.reason);
+            });
+          },
+        }),
+      );
+    });
+    const result = expect(loadWorkspaceData(true)).resolves.toEqual({
+      applications: [{ id: "slow-but-complete" }],
+    });
+    await vi.advanceTimersByTimeAsync(200_000);
+    await result;
+  });
+
   it("retries a disconnected read and returns the recovered data", async () => {
     let attempts = 0;
     vi.stubGlobal("fetch", async () => {
@@ -36,7 +66,7 @@ describe("workspace loading recovery", () => {
       );
     });
     const result = expect(loadWorkspaceData(true)).rejects.toThrow(/超时/);
-    await vi.advanceTimersByTimeAsync(60000);
+    await vi.advanceTimersByTimeAsync(200_000);
     await result;
     expect(signals).toHaveLength(2);
     expect(signals.every((signal) => signal.aborted)).toBe(true);
