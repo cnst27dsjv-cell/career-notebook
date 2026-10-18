@@ -2234,6 +2234,22 @@ small {
   font-size: 40px;
   color: var(--wine);
 }
+.loading-recovery {
+  visibility: hidden;
+  animation: reveal-loading-recovery 0s 15s forwards;
+  text-align: center;
+  padding: 0 20px;
+  color: var(--muted);
+}
+.loading-recovery a {
+  display: inline-block;
+  margin-top: 12px;
+}
+@keyframes reveal-loading-recovery {
+  to {
+    visibility: visible;
+  }
+}
 .loading-lines {
   width: 280px;
   display: flex;

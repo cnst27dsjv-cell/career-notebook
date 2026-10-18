@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { request, chromium } from "@playwright/test";
+import { request, chromium, expect } from "@playwright/test";
 import AdmZip from "adm-zip";
 process.env.SEEDING = "true";
 const { auth } = await import("../lib/auth");
@@ -82,6 +82,12 @@ try {
     const page = await browserContext.newPage();
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
+    let interrupted = false;
+    await page.route("**/api/data?scope=core", async (route) => {
+      if (interrupted) return route.continue();
+      interrupted = true;
+      await route.abort("connectionclosed");
+    });
     await page.goto("http://127.0.0.1:3042/?view=resumes");
     await page.locator(".notebook-page").waitFor();
     assert.equal(
@@ -89,7 +95,21 @@ try {
       false,
     );
     assert.deepEqual(errors, []);
-    console.log("PASS Workers 登录后页面渲染及手机宽度");
+    console.log("PASS Workers 数据连接中断后自动恢复、登录后页面渲染及手机宽度");
+    const noScriptContext = await browser.newContext({
+      storageState: await ctx.storageState(),
+      javaScriptEnabled: false,
+    });
+    const noScriptPage = await noScriptContext.newPage();
+    await noScriptPage.goto("http://127.0.0.1:3042/?view=applications");
+    const retry = noScriptPage.getByRole("link", { name: "重新加载页面" });
+    await expect(retry).toBeHidden();
+    await expect(retry).toBeVisible({ timeout: 20_000 });
+    await retry.click();
+    await expect(noScriptPage).toHaveURL("http://127.0.0.1:3042/?view=applications");
+    await expect(retry).toBeHidden();
+    await noScriptContext.close();
+    console.log("PASS 页面脚本不可用时仍能显示重试入口并保留当前栏目");
   } finally {
     await browser.close();
   }

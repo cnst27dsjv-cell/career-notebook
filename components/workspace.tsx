@@ -19,6 +19,7 @@ import {
 } from "@phosphor-icons/react";
 import { Context, api } from "./context";
 import type { Data, Interview } from "@/lib/types";
+import { loadWorkspaceData } from "@/lib/workspace-load";
 import Today from "./today";
 import Applications from "./applications";
 import Calendar from "./calendar";
@@ -58,15 +59,11 @@ export default function Workspace({ demo }: { demo: boolean }) {
     const revision = dataRevision.current;
     const initial = !initialLoadComplete.current;
     const request = (async () => {
-      const r = await fetch(initial ? "/api/data?scope=core" : "/api/data", {
-        cache: "no-store",
-      });
-      if (r.status === 401) {
+      const result = await loadWorkspaceData(initial);
+      if (result === null) {
         window.location.href = "/login";
         return;
       }
-      const result = await r.json();
-      if (!r.ok) throw Error(result.error || "加载失败");
       initialLoadComplete.current = true;
       if (revision === dataRevision.current && activeMutations.current === 0) {
         setData(result);
@@ -194,11 +191,19 @@ export default function Workspace({ demo }: { demo: boolean }) {
             </button>
           </>
         ) : (
-          <div className="loading-lines">
-            <i />
-            <i />
-            <i />
-          </div>
+          <>
+            <div className="loading-lines">
+              <i />
+              <i />
+              <i />
+            </div>
+            <div className="loading-recovery">
+              <p>加载时间较长，可能是网络连接不稳定。</p>
+              <a className="secondary" href="">
+                重新加载页面
+              </a>
+            </div>
+          </>
         )}
       </main>
     );
