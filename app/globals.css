@@ -1011,7 +1011,7 @@ small {
 .application-progress { padding: 0 34px 16px 61px; }
 .application-progress ol { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); list-style: none; padding: 0; margin: 0; }
 .progress-step { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: 11px; }
-.progress-step:not(:first-child)::before { content: ""; position: absolute; top: 8px; right: 50%; width: 100%; border-top: 1px solid var(--line); }
+.progress-step:not(:first-child)::before { content: ""; position: absolute; top: 8px; right: calc(50% + 8.5px); width: calc(100% - 17px); border-top: 1px solid var(--line); }
 .progress-step.is-done::before, .progress-step.is-current::before, .progress-step.is-past::before { border-color: #a86b73; }
 .progress-step.is-unrecorded::before { border-top-style: dashed; }
 .progress-dot { position: relative; display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid var(--line); border-radius: 50%; background: var(--paper, #faf5e9); font-size: 10px; line-height: 1; }
