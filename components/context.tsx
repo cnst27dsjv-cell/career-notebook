@@ -48,7 +48,16 @@ export async function api(url: string, values: unknown) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(values),
   });
-  const result = await r.json();
+  if (r.status === 401) throw Error("登录状态已失效，请重新登录后再操作。");
+  let result;
+  try {
+    result = await r.json();
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    throw Error(
+      `服务返回异常（HTTP ${r.status}），暂时无法确认修改是否保存。请保留当前填写内容，核对记录后再重试。`,
+    );
+  }
   if (!r.ok) throw Error(result.error || "操作失败，请重试");
   return result;
 }
