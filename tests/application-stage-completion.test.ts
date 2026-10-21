@@ -47,6 +47,7 @@ describe("投递阶段手动完成", () => {
       id: "application-1",
     });
     expect(create).toHaveBeenCalledWith({
+      select: { id: true, version: true },
       data: expect.objectContaining({
         stage: "测评",
         stageStatus: "等待结果",
@@ -110,5 +111,39 @@ describe("投递阶段手动完成", () => {
       },
       data: { status: "已完成", version: { increment: 1 } },
     });
+  });
+});
+
+describe("投递保存查询成本", () => {
+  it("允许时间冲突时不扫描其他待办日程", async () => {
+    const findMany = vi.fn(async () => {
+      throw Error("不应读取全部日程");
+    });
+    const db = {
+      $queryRaw: vi.fn(async () => []),
+      application: {
+        create: vi.fn(async ({ data }) => ({ ...data, id: "new", version: 1 })),
+      },
+      event: {
+        findMany,
+        create: vi.fn(async ({ data }) => ({
+          ...data,
+          id: "event",
+          version: 1,
+        })),
+      },
+      notificationJob: { createMany: vi.fn(async () => ({ count: 1 })) },
+    } as unknown as Prisma.TransactionClient;
+    const response = await executeBusinessAction(db, "user-1", {
+      action: "application.save",
+      values: applicationValues,
+      schedule: {
+        mode: "upsert",
+        start: "2035-10-23T10:00:00Z",
+        allowConflict: true,
+      },
+    });
+    expect(await response.json()).toMatchObject({ ok: true, id: "new" });
+    expect(findMany).not.toHaveBeenCalled();
   });
 });

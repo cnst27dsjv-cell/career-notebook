@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
-import { allReminderTimes, overlaps } from "./rules";
+import { allReminderTimes } from "./rules";
 import {
   applicationStageForEventKind,
   automaticApplicationStageStatus,
@@ -100,6 +100,29 @@ export const eventSchema = z
     (v) => !v.start || !v.deadline || (v.end ?? v.start) <= v.deadline,
     "执行时间不能晚于截止时间",
   );
+
+// Return only an overlap's identity instead of loading every pending event.
+async function findEventConflict(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  start: Date,
+  end: Date | null | undefined,
+  excludedId?: string,
+) {
+  return tx.event.findFirst({
+    where: {
+      userId,
+      status: "待完成",
+      id: { not: excludedId || "" },
+      start: { lt: end ?? new Date(start.getTime() + 3600000) },
+      OR: [
+        { end: { gt: start } },
+        { end: null, start: { gt: new Date(start.getTime() - 3600000) } },
+      ],
+    },
+    select: { id: true },
+  });
+}
 
 async function createReminderJobs(
   tx: Prisma.TransactionClient,
@@ -296,7 +319,7 @@ export async function executeBusinessAction(
       db[table] as unknown as {
         findFirst: (x: unknown) => Promise<{ id: string }>;
       }
-    ).findFirst({ where: { id: target, ...w } });
+    ).findFirst({ where: { id: target, ...w }, select: { id: true } });
     if (!item) throw Error("记录不存在");
     return item;
   };
@@ -334,7 +357,16 @@ export async function executeBusinessAction(
     const saved = await withinTransaction(async (tx) => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}))::text`;
       const old = id
-        ? await tx.application.findFirst({ where: { id, ...w } })
+        ? await tx.application.findFirst({
+            where: { id, ...w },
+            select: {
+              id: true,
+              version: true,
+              stage: true,
+              stageStatus: true,
+              history: true,
+            },
+          })
         : null;
       if (id && !old) throw new Error("记录不存在");
       if (old) {
@@ -352,6 +384,7 @@ export async function executeBusinessAction(
                 status: "待完成",
               },
               orderBy: { updatedAt: "desc" },
+              select: { id: true },
             })
           : [];
       const existingEvent = pendingEvents[0] || null;
@@ -383,9 +416,11 @@ export async function executeBusinessAction(
               version: { increment: 1 },
               history,
             },
+            select: { id: true, version: true },
           })
         : await tx.application.create({
             data: { ...values, stageStatus, ...w, history },
+            select: { id: true, version: true },
           });
       if (stageCompleted && eventKind) {
         const pendingEventIds = pendingEvents.map((event) => event.id);
@@ -456,30 +491,18 @@ export async function executeBusinessAction(
         }
         return application;
       }
-      if (schedule.start) {
-        const events = await tx.event.findMany({
-          where: {
-            ...w,
-            status: "待完成",
-            id: { not: linkedEvent?.id || "" },
-          },
-          select: { id: true, start: true, end: true },
-        });
-        if (
-          !schedule.allowConflict &&
-          events.some(
-            (event) =>
-              event.start &&
-              overlaps(
-                schedule.start!,
-                schedule.end ?? new Date(schedule.start!.getTime() + 3600000),
-                event.start,
-                event.end ?? new Date(event.start.getTime() + 3600000),
-              ),
-          )
-        )
-          throw new Error("时间与已有日程冲突。勾选允许冲突后可继续保存");
-      }
+      if (
+        schedule.start &&
+        !schedule.allowConflict &&
+        (await findEventConflict(
+          tx,
+          user.id,
+          schedule.start,
+          schedule.end,
+          linkedEvent?.id,
+        ))
+      )
+        throw new Error("时间与已有日程冲突。勾选允许冲突后可继续保存");
       if (linkedEvent)
         await tx.notificationJob.updateMany({
           where: {
@@ -525,26 +548,12 @@ export async function executeBusinessAction(
       if (id && !old) throw new Error("记录不存在");
       if (old && old.version !== raw.version)
         throw new Error("日程已更新，请刷新");
-      if (values.start) {
-        const all = await tx.event.findMany({
-          where: { ...w, status: "待完成", id: { not: id || "" } },
-          select: { id: true, start: true, end: true },
-        });
-        if (
-          !raw.allowConflict &&
-          all.some(
-            (e) =>
-              e.start &&
-              overlaps(
-                values.start!,
-                values.end ?? new Date(values.start!.getTime() + 3600000),
-                e.start,
-                e.end ?? new Date(e.start.getTime() + 3600000),
-              ),
-          )
-        )
-          throw new Error("时间与已有日程冲突。勾选允许冲突后可继续保存");
-      }
+      if (
+        values.start &&
+        !raw.allowConflict &&
+        (await findEventConflict(tx, user.id, values.start, values.end, id))
+      )
+        throw new Error("时间与已有日程冲突。勾选允许冲突后可继续保存");
       if (old) {
         await tx.notificationJob.updateMany({
           where: { eventId: id, state: { in: ["pending", "sending"] } },
