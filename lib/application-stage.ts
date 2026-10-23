@@ -2,6 +2,7 @@ export const schedulableApplicationStages = [
   "待投递",
   "测评",
   "笔试",
+  "AI面",
   "面试",
 ] as const;
 
@@ -11,6 +12,7 @@ export type SchedulableApplicationStage =
 export const manuallyCompletableApplicationStages = [
   "测评",
   "笔试",
+  "AI面",
   "面试",
 ] as const;
 
@@ -18,6 +20,7 @@ const stageToKind: Record<SchedulableApplicationStage, string> = {
   待投递: "投递",
   测评: "测评",
   笔试: "笔试",
+  AI面: "AI面",
   面试: "面试",
 };
 
@@ -27,7 +30,7 @@ export function eventKindForApplicationStage(stage: string) {
 
 export function applicationStageForEventKind(kind: string) {
   if (kind === "投递") return "待投递";
-  return ["测评", "笔试", "面试"].includes(kind) ? kind : null;
+  return ["测评", "笔试", "AI面", "面试"].includes(kind) ? kind : null;
 }
 
 export function completedApplicationStageForEventKind(kind: string) {

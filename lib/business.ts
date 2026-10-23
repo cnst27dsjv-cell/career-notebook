@@ -18,7 +18,7 @@ export const appSchema = z.object({
   role: text.min(1),
   city: text.default(""),
   batch: text.default("2027 届秋招"),
-  stage: z.enum(["待投递", "已投递", "测评", "笔试", "面试", "Offer"]),
+  stage: z.enum(["待投递", "已投递", "测评", "笔试", "AI面", "面试", "Offer"]),
   outcome: z
     .enum(["", "未通过", "主动撤回", "录用已接受", "录用已拒绝"])
     .default(""),
@@ -71,7 +71,7 @@ const applicationScheduleSchema = z.discriminatedUnion("mode", [
 export const eventSchema = z
   .object({
     title: text.min(1),
-    kind: z.enum(["招聘会", "投递", "测评", "笔试", "面试", "准备", "其他"]),
+    kind: z.enum(["招聘会", "投递", "测评", "笔试", "AI面", "面试", "准备", "其他"]),
     round: z.string().max(40).optional(),
     applicationId: z.string().nullable().optional(),
     start: date,

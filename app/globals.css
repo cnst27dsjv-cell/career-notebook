@@ -1009,7 +1009,7 @@ small {
 .application-record { border-bottom: 1px solid #ded0b880; }
 .application-record > .table-row { border-bottom: 0; padding-bottom: 12px; }
 .application-progress { padding: 0 34px 16px 61px; }
-.application-progress ol { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); list-style: none; padding: 0; margin: 0; }
+.application-progress ol { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); list-style: none; padding: 0; margin: 0; }
 .progress-step { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: 11px; }
 .progress-step:not(:first-child)::before { content: ""; position: absolute; top: 8px; right: calc(50% + 8.5px); width: calc(100% - 17px); border-top: 1px solid var(--line); }
 .progress-step.is-done::before, .progress-step.is-current::before, .progress-step.is-past::before { border-color: #a86b73; }

@@ -230,7 +230,7 @@ export async function POST(r: Request) {
         .object({
           id: z.string().nullable(),
           stage: z
-            .enum(["待投递", "已投递", "测评", "笔试", "面试", "Offer"])
+            .enum(["待投递", "已投递", "测评", "笔试", "AI面", "面试", "Offer"])
             .nullable(),
           outcome: z
             .enum(["", "未通过", "主动撤回", "录用已接受", "录用已拒绝"])
@@ -239,7 +239,7 @@ export async function POST(r: Request) {
         })
         .parse(
           await generate(
-            "根据用户明确表达生成投递进度更新草稿，返回 {id,stage,outcome,missing}。只选择提供的记录ID；同公司多岗位且无法确定则id=null并询问岗位。未要求变更的字段返回null。阶段状态由关联日程自动计算，不要返回阶段状态。完成面试仅代表等待结果，不代表通过。",
+            "根据用户明确表达生成投递进度更新草稿，返回 {id,stage,outcome,missing}。只选择提供的记录ID；同公司多岗位且无法确定则id=null并询问岗位。未要求变更的字段返回null。阶段状态由关联日程自动计算，不要返回阶段状态。AI面是笔试之后、面试之前的独立阶段，AI面通知使用stage=AI面。完成面试仅代表等待结果，不代表通过。",
             {
               input,
               candidates: candidates.map((a) => ({
@@ -292,6 +292,7 @@ export async function POST(r: Request) {
             "投递",
             "测评",
             "笔试",
+            "AI面",
             "面试",
             "准备",
             "其他",
@@ -305,7 +306,7 @@ export async function POST(r: Request) {
         })
         .parse(
           await generate(
-            "从邮件/文字提取一项日程。返回 {title,kind,start,deadline,company,role,notes,missing:缺失或歧义字段列表}。时间返回带+08:00的ISO格式；不明确则null并放入missing，不能猜年份。当前日期" +
+            "从邮件/文字提取一项日程。AI面通知使用kind=AI面，与面试区分。返回 {title,kind,start,deadline,company,role,notes,missing:缺失或歧义字段列表}。时间返回带+08:00的ISO格式；不明确则null并放入missing，不能猜年份。当前日期" +
               new Date().toISOString(),
             input,
           ),

@@ -32,7 +32,11 @@ it("does not invent completed assessments or exams for an interview entered dire
   });
   expect(p.steps[2].state).toBe("unrecorded");
   expect(p.steps[3].state).toBe("unrecorded");
-  expect(p.steps[4]).toMatchObject({ current: true, state: "current" });
+  expect(p.steps.find((s) => s.stage === "AI面")?.state).toBe("unrecorded");
+  expect(p.steps.find((s) => s.stage === "面试")).toMatchObject({
+    current: true,
+    state: "current",
+  });
 });
 it("uses explicit history for completion and distinguishes a merely visited stage", () => {
   const p = applicationProgress({
@@ -70,7 +74,8 @@ it.each(["未通过", "主动撤回", "录用已接受", "录用已拒绝"])(
     });
     expect(p.ended).toBe(true);
     expect(p.summary).toContain(outcome);
-    if (outcome === "录用已接受") expect(p.steps[5].state).toBe("done");
+    if (outcome === "录用已接受")
+      expect(p.steps.find((s) => s.stage === "Offer")?.state).toBe("done");
   },
 );
 it("does not imply an offer has been accepted just because the stage is Offer", () => {
@@ -80,6 +85,26 @@ it("does not imply an offer has been accepted just because the stage is Offer", 
     stageStatus: "等待结果",
   });
   expect(p.ended).toBe(false);
-  expect(p.steps[5].state).toBe("current");
+  expect(p.steps.find((s) => s.stage === "Offer")?.state).toBe("current");
   expect(p.summary).not.toContain("已接受");
+});
+
+it("shows AI interview between the written exam and interview, and waits after completion", () => {
+  const p = applicationProgress({
+    ...base,
+    stage: "AI面",
+    stageStatus: "等待结果",
+  });
+  expect(p.steps.map((s) => s.stage)).toEqual([
+    "待投递",
+    "已投递",
+    "测评",
+    "笔试",
+    "AI面",
+    "面试",
+    "Offer",
+  ]);
+  expect(p.steps[4]).toMatchObject({ current: true, state: "done" });
+  expect(p.steps[5].state).toBe("future");
+  expect(p.summary).toBe("AI面 · 已完成 · 等待下一阶段");
 });

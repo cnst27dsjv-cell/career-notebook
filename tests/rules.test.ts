@@ -149,3 +149,16 @@ describe("投递阶段与日程联动", () => {
     expect(applicationStageStatusLabel("已投递", "等待结果")).toBe("等待结果");
   });
 });
+
+it("AI面支持安排、日程联动和完成后的等待状态", () => {
+  expect(eventKindForApplicationStage("AI面")).toBe("AI面");
+  expect(applicationStageForEventKind("AI面")).toBe("AI面");
+  expect(completedApplicationStageForEventKind("AI面")).toBe("AI面");
+  expect(isManuallyCompletableApplicationStage("AI面")).toBe(true);
+  expect(
+    automaticApplicationStageStatus("AI面", { hasPendingEvent: true }),
+  ).toBe("待完成");
+  expect(
+    automaticApplicationStageStatus("AI面", { stageCompleted: true }),
+  ).toBe("等待结果");
+});

@@ -155,6 +155,6 @@ export type Data = {
   };
   user: { name: string; email: string };
 };
-export const stages = ["待投递", "已投递", "测评", "笔试", "面试", "Offer"];
+export const stages = ["待投递", "已投递", "测评", "笔试", "AI面", "面试", "Offer"];
 export const outcomes = ["未通过", "主动撤回", "录用已接受", "录用已拒绝"];
-export const kinds = ["招聘会", "投递", "测评", "笔试", "面试", "准备", "其他"];
+export const kinds = ["招聘会", "投递", "测评", "笔试", "AI面", "面试", "准备", "其他"];
