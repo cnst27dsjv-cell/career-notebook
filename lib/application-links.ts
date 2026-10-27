@@ -181,10 +181,98 @@ async function responseText(response: Response) {
   return text + decoder.decode();
 }
 
+async function readHotjobDetail(url: URL, tenant: string, postId: string) {
+  const recruitTypes: Record<string, string> = {
+    campus: "1",
+    school: "1",
+    society: "2",
+    social: "2",
+    intern: "12",
+    interns: "12",
+    overseas: "13",
+  };
+  const endpoint = new URL(
+    `/wecruit/positionInfo/listPositionDetail/${tenant}?iSaJAx=isAjax&request_locale=zh_CN`,
+    "https://wecruit.hotjob.cn",
+  );
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: new URLSearchParams({
+        postId,
+        recruitType: recruitTypes[url.searchParams.get("postType") || ""] || "",
+      }),
+      redirect: "manual",
+      signal: AbortSignal.timeout(12000),
+    });
+  } catch {
+    throw Error("招聘网页连接超时或无法访问，请手动填写或上传截图");
+  }
+  if (
+    [401, 403].includes(response.status) ||
+    (response.status >= 300 && response.status < 400)
+  )
+    throw Error("该招聘页面需要登录或限制访问，请手动填写或上传截图");
+  if (!response.ok)
+    throw Error(`招聘网页暂时无法访问（${response.status}），请稍后重试`);
+  const body = await responseText(response);
+  let result;
+  try {
+    result = JSON.parse(body);
+  } catch {
+    throw Error("招聘网站未返回可读取的岗位正文，请手动填写或上传截图");
+  }
+  const job = result?.data;
+  const field = (name: string): string =>
+    typeof job?.[name] === "string" ? job[name].trim() : "";
+  if (
+    String(result?.state) !== "200" ||
+    !field("postName") ||
+    !(field("workContent") || field("serviceCondition"))
+  )
+    throw Error(
+      "未读取到岗位正文，职位可能已下架或限制访问，请核实原链接、手动填写或上传截图",
+    );
+  // Only public job fields are sent to the model, not applicant statistics or site configuration.
+  return extractApplicationPageText(
+    [
+      `公司：${field("company") || field("orgName")}`,
+      `岗位：${field("postName")}`,
+      `工作地点：${field("workPlaceStr")}`,
+      `招聘项目：${field("projectName")}`,
+      `工作类型：${field("workTypeStr")}`,
+      `岗位类别：${field("postTypeName")}`,
+      `发布时间：${field("publishDate")}`,
+      `截止时间：${field("endDate")}`,
+      `岗位职责：\n${field("workContent")}`,
+      `任职要求：\n${field("serviceCondition")}`,
+    ].join("\n"),
+  );
+}
+
 export async function readApplicationLink(value: string) {
   const original = validateApplicationLink(value);
   let current = original;
   for (let redirects = 0; redirects <= maximumRedirects; redirects += 1) {
+    const hotjobTenant =
+      current.hostname === "wecruit.hotjob.cn" && !current.port
+        ? current.pathname.match(
+            /^\/(SU[a-zA-Z0-9]+)\/pb\/posDetail\.html$/,
+          )?.[1]
+        : undefined;
+    const postId = current.searchParams.get("postId");
+    if (hotjobTenant && postId && /^[a-zA-Z0-9_-]+$/.test(postId)) {
+      return {
+        sourceUrl: value.trim(),
+        finalUrl: current.toString(),
+        text: await readHotjobDetail(current, hotjobTenant, postId),
+      };
+    }
     let response: Response;
     try {
       response = await fetch(current, {

@@ -81,6 +81,82 @@ describe("application page extraction", () => {
 });
 
 describe("application page loading", () => {
+  const hotjobUrl =
+    "https://wecruit.hotjob.cn/SU6419745cbef57c635fe10142/pb/posDetail.html?postId=228649&postType=campus";
+
+  it("reads Hotjob public job details instead of the JavaScript page shell", async () => {
+    const request = vi.fn().mockResolvedValue(
+      Response.json({
+        state: "200",
+        data: {
+          postName: "投资银行债券业务岗",
+          company: "华泰联合证券有限责任公司",
+          workPlaceStr: "北京市、南京市、上海市、深圳市",
+          projectName: "2026年秋招（总部）",
+          workContent: "参与境内外债券项目执行。\n维护客户关系。",
+          serviceCondition: "2027年应届毕业生，硕士研究生及以上学历。",
+          endDate: "2026-11-01 23:59:59",
+          deliveryCount: 123,
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", request);
+    const page = await readApplicationLink(hotjobUrl);
+    expect(page.sourceUrl).toBe(hotjobUrl);
+    expect(page.finalUrl).toBe(hotjobUrl);
+    for (const expected of [
+      "投资银行债券业务岗",
+      "华泰联合证券有限责任公司",
+      "北京市、南京市、上海市、深圳市",
+      "2026年秋招（总部）",
+      "维护客户关系。",
+      "2027年应届毕业生",
+      "2026-11-01 23:59:59",
+    ])
+      expect(page.text).toContain(expected);
+    expect(page.text).not.toContain("123");
+    expect(request).toHaveBeenCalledTimes(1);
+    const [url, options] = request.mock.calls[0];
+    expect(String(url)).toBe(
+      "https://wecruit.hotjob.cn/wecruit/positionInfo/listPositionDetail/SU6419745cbef57c635fe10142?iSaJAx=isAjax&request_locale=zh_CN",
+    );
+    expect(options.method).toBe("POST");
+    expect(options.redirect).toBe("manual");
+    expect(options.body.toString()).toBe("postId=228649&recruitType=1");
+  });
+
+  it.each([
+    { state: "1017", data: null },
+    {
+      state: "200",
+      data: { postName: "职位", workContent: "", serviceCondition: "" },
+    },
+  ])(
+    "reports unavailable Hotjob details without treating them as a job",
+    async (payload) => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(payload)));
+      await expect(readApplicationLink(hotjobUrl)).rejects.toThrow(
+        "未读取到岗位正文",
+      );
+    },
+  );
+
+  it("does not follow Hotjob API redirects to a login or private address", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("", {
+          status: 302,
+          headers: { location: "http://127.0.0.1/private" },
+        }),
+      ),
+    );
+    await expect(readApplicationLink(hotjobUrl)).rejects.toThrow(
+      "需要登录或限制访问",
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("reads a public HTML response", async () => {
     vi.stubGlobal(
       "fetch",
