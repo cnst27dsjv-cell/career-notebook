@@ -7,6 +7,7 @@ import {
   completedApplicationStageForEventKind,
   eventKindForApplicationStage,
   isManuallyCompletableApplicationStage,
+  syncGeneratedEventTitle,
 } from "./application-stage";
 const text = z.string().trim().max(100000);
 const date = z
@@ -541,7 +542,18 @@ export async function executeBusinessAction(
     const values = eventSchema.parse(raw.values);
     if (values.absoluteReminders.some((d) => d <= new Date()))
       throw Error("自定义提醒时间必须在未来，请移除已经过去的时间");
-    if (values.applicationId) await own("application", values.applicationId);
+    if (values.applicationId) {
+      const application = await db.application.findFirst({
+        where: { id: values.applicationId, ...w },
+        select: { company: true },
+      });
+      if (!application) throw Error("记录不存在");
+      values.title = syncGeneratedEventTitle(
+        values.title,
+        values.kind,
+        application.company,
+      );
+    }
     const item = await withinTransaction(async (tx) => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}))::text`;
       const old = id ? await tx.event.findFirst({ where: { id, ...w } }) : null;

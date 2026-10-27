@@ -13,6 +13,7 @@ import {
 import {
   eventKindForApplicationStage,
   isManuallyCompletableApplicationStage,
+  syncGeneratedEventTitle,
 } from "@/lib/application-stage";
 const val = (f: FormData, key: string) => String(f.get(key) || "");
 type ApplicationScheduleDraft = {
@@ -617,6 +618,14 @@ export function EventForm({
   onClose: () => void;
 }) {
   const { data, mutateOptimistic, notify } = useWorkspace();
+  const [kind, setKind] = useState(item?.kind || "面试");
+  const [applicationId, setApplicationId] = useState(item?.applicationId || "");
+  const company = data.applications.find(
+    (a) => a.id === applicationId,
+  )?.company;
+  const [title, setTitle] = useState(() =>
+    syncGeneratedEventTitle(item?.title || "", kind, company),
+  );
   const applyEvent = (event: Event) => (current: Data): Data => ({
     ...current,
     events: current.events.some((item) => item.id === event.id)
@@ -644,7 +653,11 @@ export function EventForm({
         onError={notify}
         onSubmit={async (f) => {
           const values = {
-            title: val(f, "title"),
+            title: syncGeneratedEventTitle(
+              val(f, "title"),
+              val(f, "kind"),
+              company,
+            ),
             kind: val(f, "kind"),
             applicationId: val(f, "applicationId") || null,
             start: iso(f.get("start")),
@@ -693,13 +706,24 @@ export function EventForm({
           <input
             required
             name="title"
-            defaultValue={item?.title}
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
             placeholder="例如：产品经理一面"
           />
         </Field>
         <div className="form-grid">
           <Field label="类型">
-            <select name="kind" defaultValue={item?.kind || "面试"}>
+            <select
+              name="kind"
+              value={kind}
+              onChange={(event) => {
+                const next = event.target.value;
+                setKind(next);
+                setTitle((current) =>
+                  syncGeneratedEventTitle(current, next, company),
+                );
+              }}
+            >
               {kinds.map((k) => (
                 <option key={k}>{k}</option>
               ))}
@@ -708,7 +732,8 @@ export function EventForm({
           <Field label="关联投递">
             <select
               name="applicationId"
-              defaultValue={item?.applicationId || ""}
+              value={applicationId}
+              onChange={(event) => setApplicationId(event.target.value)}
             >
               <option value="">不关联岗位</option>
               {data.applications.map((a) => (

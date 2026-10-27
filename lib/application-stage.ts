@@ -28,6 +28,20 @@ export function eventKindForApplicationStage(stage: string) {
   return stageToKind[stage as SchedulableApplicationStage] || null;
 }
 
+export function syncGeneratedEventTitle(
+  title: string,
+  kind: string,
+  company?: string,
+) {
+  if (!company) return title;
+  const generated = ["完成投递", ...manuallyCompletableApplicationStages].some(
+    (label) => title === `${company} · ${label}`,
+  );
+  return generated
+    ? `${company} · ${kind === "投递" ? "完成投递" : kind}`
+    : title;
+}
+
 export function applicationStageForEventKind(kind: string) {
   if (kind === "投递") return "待投递";
   return ["测评", "笔试", "AI面", "面试"].includes(kind) ? kind : null;
