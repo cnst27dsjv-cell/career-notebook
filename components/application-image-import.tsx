@@ -13,6 +13,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import type { Data } from "@/lib/types";
+import { readRecognitionResponse } from "@/lib/recognition-response";
 
 export type PendingApplicationImage = {
   clientId: string;
@@ -159,8 +160,7 @@ export function ApplicationImageImport({
         method: "POST",
         body: form,
       });
-      const result = await response.json();
-      if (!response.ok) throw Error(result.error || "图片识别失败，请重试");
+      const result = await readRecognitionResponse(response);
       setNotes(result.notes || []);
       onRecognized(result);
     } catch (reason) {
@@ -185,9 +185,7 @@ export function ApplicationImageImport({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: url.trim() }),
       });
-      const result = await response.json();
-      if (!response.ok)
-        throw Error(result.error || "链接解析失败，请手动填写或上传截图");
+      const result = await readRecognitionResponse(response);
       setNotes(result.notes || []);
       onRecognized(result);
     } catch (reason) {
