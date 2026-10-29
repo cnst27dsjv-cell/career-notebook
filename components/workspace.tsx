@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   BookOpen,
   CalendarBlank,
@@ -22,13 +23,29 @@ import type { Data, Interview } from "@/lib/types";
 import { loadWorkspaceData } from "@/lib/workspace-load";
 import Today from "./today";
 import Applications from "./applications";
-import Calendar from "./calendar";
-import Resumes from "./resumes";
-import Preparations from "./preparations";
-import Settings from "./settings";
-import Assistant from "./assistant";
 import { EventForm } from "./forms";
 import { usePageSound } from "./use-page-sound";
+const viewLoading = ({
+  error,
+  retry,
+}: {
+  error?: Error | null;
+  retry?: () => void;
+}) => (
+  <div role={error ? "alert" : "status"}>
+    <p>{error ? "这个栏目暂时未能加载，请重试。" : "正在打开栏目…"}</p>
+    {error && (
+      <button className="secondary" onClick={retry}>重新加载栏目</button>
+    )}
+  </div>
+);
+const Calendar = dynamic(() => import("./calendar"), { loading: viewLoading });
+const Resumes = dynamic(() => import("./resumes"), { loading: viewLoading });
+const Preparations = dynamic(() => import("./preparations"), {
+  loading: viewLoading,
+});
+const Settings = dynamic(() => import("./settings"), { loading: viewLoading });
+const Assistant = dynamic(() => import("./assistant"), { loading: viewLoading });
 const tabs = [
   { id: "today", label: "今日", en: "Today", icon: House },
   { id: "calendar", label: "日历", en: "Calendar", icon: CalendarBlank },
@@ -198,7 +215,7 @@ export default function Workspace({ demo }: { demo: boolean }) {
               <i />
             </div>
             <div className="loading-recovery">
-              <p>加载时间较长，可能是网络连接不稳定。</p>
+              <p>工作台仍未加载完成，请重新加载页面。</p>
               <a className="secondary" href="">
                 重新加载页面
               </a>
