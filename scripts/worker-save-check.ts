@@ -142,7 +142,7 @@ try {
   );
   assert.deepEqual(edits.map((r) => r.status()).sort(), [200, 400]);
   const rejected = edits.find((r) => r.status() === 400)!;
-  assert.match((await rejected.json()).error, /记录已在其他设备修改/);
+  assert.match((await rejected.json()).error, /投递记录已更新/);
   const updated = await db.application.findUniqueOrThrow({
     where: { id: first.id },
   });

@@ -372,7 +372,9 @@ export async function executeBusinessAction(
       if (id && !old) throw new Error("记录不存在");
       if (old) {
         if (old.version !== raw.version)
-          throw new Error("记录已在其他设备修改，请刷新后重试");
+          throw new Error(
+            "投递记录已更新，可能是上次保存已成功或关联日程发生了变化。请重新打开详情核对最新进度",
+          );
       }
       const applicationId = old?.id || "";
       const pendingEvents =

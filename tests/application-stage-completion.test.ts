@@ -17,6 +17,37 @@ const applicationValues = {
 };
 
 describe("投递阶段手动完成", () => {
+  it("rejects a stale form without claiming another device changed it or overwriting progress", async () => {
+    const update = vi.fn();
+    const findEvents = vi.fn();
+    const db = {
+      $queryRaw: vi.fn(async () => []),
+      application: {
+        findFirst: vi.fn(async () => ({
+          id: "application-1",
+          version: 2,
+          stage: "AI面",
+          stageStatus: "待完成",
+          history: [],
+        })),
+        update,
+      },
+      event: { findMany: findEvents },
+    } as unknown as Prisma.TransactionClient;
+    await expect(
+      executeBusinessAction(db, "user-1", {
+        action: "application.save",
+        id: "application-1",
+        version: 1,
+        values: { ...applicationValues, stage: "AI面" },
+      }),
+    ).rejects.toThrow(
+      "投递记录已更新，可能是上次保存已成功或关联日程发生了变化",
+    );
+    expect(update).not.toHaveBeenCalled();
+    expect(findEvents).not.toHaveBeenCalled();
+  });
+
   it.each(["测评", "AI面"])("新建投递时可以直接完成%s", async (stage) => {
     const create = vi.fn(
       async ({ data }: { data: Record<string, unknown> }) => ({

@@ -228,6 +228,23 @@ export function ApplicationForm({
               notes: val(f, "notes"),
               resumeId: val(f, "resumeId") || null,
             },
+          }).catch(async (error: unknown) => {
+            if (
+              error instanceof Error &&
+              /投递记录已更新|记录已在其他设备修改/.test(error.message)
+            ) {
+              try {
+                await refresh();
+              } catch {
+                throw Error(
+                  "投递记录已更新，但暂时未能读取最新进度。当前填写内容已保留，请网络恢复后关闭详情并重新打开核对。",
+                );
+              }
+              throw Error(
+                "投递记录已更新，可能是上次保存已经成功。列表已重新加载，当前填写内容已保留；请关闭详情后重新打开，核对最新进度再修改。",
+              );
+            }
+            throw error;
           })) as { id: string; version: number };
           setPersisted(saved);
           const pending = images.filter((image) => image.status !== "uploaded");
