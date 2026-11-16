@@ -7,6 +7,7 @@ const labels = {
   past: "已历经",
   unrecorded: "未记录",
   future: "未开始",
+  ended: "流程已结束",
 };
 export default function ApplicationProgress({
   application,
@@ -25,7 +26,7 @@ export default function ApplicationProgress({
             title={`${step.stage}：${labels[step.state]}${step.date ? ` · 投递于 ${step.date}` : ""}`}
           >
             <span className="progress-dot" aria-hidden="true">
-              {step.state === "done" ? "✓" : ""}
+              {step.state === "done" ? "✓" : step.state === "ended" ? "×" : ""}
             </span>
             <span className="progress-stage">{step.stage}</span>
             <span className="progress-note">

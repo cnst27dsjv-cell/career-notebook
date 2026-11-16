@@ -7,6 +7,16 @@ const base = {
   appliedAt: null,
   history: [],
 };
+it("marks the rejected stage as ended rather than waiting for the next stage", () => {
+  const p = applicationProgress({
+    ...base,
+    stage: "AI面",
+    stageStatus: "等待结果",
+    outcome: "未通过",
+  });
+  expect(p.steps.find((s) => s.stage === "AI面")?.state).toBe("ended");
+  expect(p.summary).toBe("AI面 · 未通过 · 已结束");
+});
 it("starts at pending without implying an application was submitted", () => {
   const p = applicationProgress(base);
   expect(p.steps[0]).toMatchObject({ current: true, state: "current" });

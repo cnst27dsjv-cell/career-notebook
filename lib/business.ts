@@ -72,7 +72,16 @@ const applicationScheduleSchema = z.discriminatedUnion("mode", [
 export const eventSchema = z
   .object({
     title: text.min(1),
-    kind: z.enum(["招聘会", "投递", "测评", "笔试", "AI面", "面试", "准备", "其他"]),
+    kind: z.enum([
+      "招聘会",
+      "投递",
+      "测评",
+      "笔试",
+      "AI面",
+      "面试",
+      "准备",
+      "其他",
+    ]),
     round: z.string().max(40).optional(),
     applicationId: z.string().nullable().optional(),
     start: date,
@@ -205,7 +214,7 @@ async function writeApplicationProgress(
   const application = await tx.application.findFirst({
     where: { id: applicationId, userId },
   });
-  if (!application) return;
+  if (!application || application.outcome) return;
   const changed =
     application.stage !== stage ||
     application.stageStatus !== stageStatus ||
@@ -325,6 +334,8 @@ export async function executeBusinessAction(
     return item;
   };
   if (action === "application.save") {
+    const createId = z.string().uuid().optional().parse(raw.createId);
+    let replayed = false;
     const values = appSchema.parse(raw.values);
     const hasStageCompletedInput = Object.prototype.hasOwnProperty.call(
       raw,
@@ -341,9 +352,10 @@ export async function executeBusinessAction(
       raw,
       "schedule",
     );
-    const schedule = hasScheduleInput
-      ? applicationScheduleSchema.parse(raw.schedule)
-      : undefined;
+    const schedule =
+      hasScheduleInput && !values.outcome
+        ? applicationScheduleSchema.parse(raw.schedule)
+        : undefined;
     const eventKind = eventKindForApplicationStage(values.stage);
     if (schedule && !eventKind) throw new Error("当前阶段不能创建关联日程");
     if (
@@ -357,6 +369,18 @@ export async function executeBusinessAction(
       throw new Error("请填写实际投递日期");
     const saved = await withinTransaction(async (tx) => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}))::text`;
+      // A committed creation may lose its HTTP response. Reuse its identity on retry.
+      if (!id && createId) {
+        const existing = await tx.application.findUnique({
+          where: { id: createId },
+          select: { id: true, userId: true, version: true },
+        });
+        if (existing) {
+          if (existing.userId !== user.id) throw Error("无效的新增标识");
+          replayed = true;
+          return existing;
+        }
+      }
       const old = id
         ? await tx.application.findFirst({
             where: { id, ...w },
@@ -365,6 +389,7 @@ export async function executeBusinessAction(
               version: true,
               stage: true,
               stageStatus: true,
+              outcome: true,
               history: true,
             },
           })
@@ -378,7 +403,7 @@ export async function executeBusinessAction(
       }
       const applicationId = old?.id || "";
       const pendingEvents =
-        applicationId && eventKind
+        applicationId && eventKind && !values.outcome
           ? await tx.event.findMany({
               where: {
                 ...w,
@@ -391,23 +416,27 @@ export async function executeBusinessAction(
             })
           : [];
       const existingEvent = pendingEvents[0] || null;
-      const stageStatus = automaticApplicationStageStatus(values.stage, {
-        stageCompleted,
-        hasPendingEvent:
-          schedule?.mode === "upsert" || (!schedule && Boolean(existingEvent)),
-        keepWaiting:
-          !hasStageCompletedInput &&
-          !schedule &&
-          old?.stage === values.stage &&
-          old.stageStatus === "等待结果",
-      });
+      const stageStatus =
+        values.outcome && old?.stage === values.stage
+          ? old.stageStatus
+          : automaticApplicationStageStatus(values.stage, {
+              stageCompleted,
+              hasPendingEvent:
+                schedule?.mode === "upsert" ||
+                (!schedule && Boolean(existingEvent)),
+              keepWaiting:
+                !hasStageCompletedInput &&
+                !schedule &&
+                old?.stage === values.stage &&
+                old.stageStatus === "等待结果",
+            });
       const history = old
         ? ([...(old.history as Prisma.JsonArray)] as Prisma.JsonArray)
         : [];
       history.push({
         at: new Date().toISOString(),
-        from: old ? `${old.stage} · ${old.stageStatus}` : "新建",
-        to: `${values.stage} · ${stageStatus}`,
+        from: old ? `${old.stage} · ${old.outcome || old.stageStatus}` : "新建",
+        to: `${values.stage} · ${values.outcome || stageStatus}`,
         resumeId: values.resumeId ?? null,
       });
       const application = old
@@ -422,9 +451,36 @@ export async function executeBusinessAction(
             select: { id: true, version: true },
           })
         : await tx.application.create({
-            data: { ...values, stageStatus, ...w, history },
+            data: {
+              ...values,
+              stageStatus,
+              ...w,
+              history,
+              ...(createId ? { id: createId } : {}),
+            },
             select: { id: true, version: true },
           });
+      if (values.outcome) {
+        const events = await tx.event.findMany({
+          where: { ...w, applicationId: application.id },
+          select: { id: true },
+        });
+        if (events.length) {
+          await tx.notificationJob.updateMany({
+            where: {
+              ...w,
+              eventId: { in: events.map((event) => event.id) },
+              state: { in: ["pending", "sending"] },
+            },
+            data: { state: "cancelled" },
+          });
+          await tx.event.updateMany({
+            where: { ...w, applicationId: application.id, status: "待完成" },
+            data: { status: "已取消", version: { increment: 1 } },
+          });
+        }
+        return application;
+      }
       if (stageCompleted && eventKind) {
         const pendingEventIds = pendingEvents.map((event) => event.id);
         if (pendingEventIds.length)
@@ -539,25 +595,56 @@ export async function executeBusinessAction(
       ok: true,
       id: saved.id,
       version: saved.version,
+      replayed,
     });
+  } else if (action === "application.delete") {
+    if (!id) throw Error("缺少记录编号");
+    const version = z.number().int().positive().parse(raw.version);
+    await withinTransaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}))::text`;
+      const application = await tx.application.findFirst({
+        where: { id, ...w },
+        select: { version: true },
+      });
+      if (!application) return; // Safe retry after a successful deletion.
+      if (application.version !== version)
+        throw Error("投递记录已更新，请重新打开详情核对后再删除");
+      // Keep schedules (including their reminders), files and interview practice.
+      await tx.event.updateMany({
+        where: { applicationId: id, ...w },
+        data: { applicationId: null },
+      });
+      await tx.preparation.updateMany({
+        where: { applicationId: id, ...w },
+        data: { applicationId: null },
+      });
+      await tx.fileAsset.updateMany({
+        where: { applicationId: id, ...w },
+        data: { applicationId: null },
+      });
+      await tx.application.delete({ where: { id } });
+    });
+    return Response.json({ ok: true, deletedApplicationId: id });
   } else if (action === "event.save") {
     const values = eventSchema.parse(raw.values);
     if (values.absoluteReminders.some((d) => d <= new Date()))
       throw Error("自定义提醒时间必须在未来，请移除已经过去的时间");
-    if (values.applicationId) {
-      const application = await db.application.findFirst({
-        where: { id: values.applicationId, ...w },
-        select: { company: true },
-      });
-      if (!application) throw Error("记录不存在");
-      values.title = syncGeneratedEventTitle(
-        values.title,
-        values.kind,
-        application.company,
-      );
-    }
     const item = await withinTransaction(async (tx) => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}))::text`;
+      if (values.applicationId) {
+        const application = await tx.application.findFirst({
+          where: { id: values.applicationId, ...w },
+          select: { company: true, outcome: true },
+        });
+        if (!application) throw Error("记录不存在");
+        if (application.outcome)
+          throw Error("投递流程已结束，请先在投递详情中恢复进行，再安排日程");
+        values.title = syncGeneratedEventTitle(
+          values.title,
+          values.kind,
+          application.company,
+        );
+      }
       const old = id ? await tx.event.findFirst({ where: { id, ...w } }) : null;
       if (id && !old) throw new Error("记录不存在");
       if (old && old.version !== raw.version)
@@ -594,6 +681,14 @@ export async function executeBusinessAction(
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}))::text`;
       const old = await tx.event.findUniqueOrThrow({ where: { id } });
       if (old.version !== raw.version) throw new Error("日程已更新，请刷新");
+      if (status === "待完成" && old.applicationId) {
+        const application = await tx.application.findFirst({
+          where: { id: old.applicationId, ...w },
+          select: { outcome: true },
+        });
+        if (application?.outcome)
+          throw Error("投递流程已结束，请先在投递详情中恢复进行，再恢复日程");
+      }
       const e = await tx.event.update({
         where: { id },
         data: { status, version: { increment: 1 } },

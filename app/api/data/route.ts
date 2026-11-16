@@ -173,6 +173,7 @@ export async function POST(request: Request) {
     if (
       [
         "application.save",
+        "application.delete",
         "event.save",
         "event.status",
         "event.delete",

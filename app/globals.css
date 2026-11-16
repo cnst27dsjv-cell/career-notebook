@@ -1028,7 +1028,7 @@ small {
 .progress-step.is-past .progress-dot { border-color: #a86b73; background: #e8d4ce; }
 .progress-step.is-current .progress-dot { border-color: var(--wine); box-shadow: 0 0 0 3px #781b2b14; }
 .progress-step.is-current .progress-stage { color: var(--wine); font-weight: 700; }
-.progress-step.is-current:not(.is-done) .progress-dot::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--wine); }
+.progress-step.is-current:not(.is-done):not(.is-ended) .progress-dot::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--wine); }
 .application-progress .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .application-progress .progress-note { min-height: 14px; font-size: 10px; }
 .progress-summary { margin: 6px 0 0; text-align: right; font-size: 11px; color: var(--wine); }

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Application, Data, Event, Material, Prep } from "@/lib/types";
 import { kinds, stages, outcomes } from "@/lib/types";
 import { api, useWorkspace, inputDate, iso } from "./context";
@@ -47,8 +47,10 @@ export function ApplicationForm({
   item?: Application;
   onClose: () => void;
 }) {
-  const { data, refresh, notify } = useWorkspace();
+  const { data, refresh, notify, mutateOptimistic } = useWorkspace();
+  const createId = useRef<string | undefined>(undefined);
   const [stage, setStage] = useState(item?.stage || "待投递");
+  const [outcome, setOutcome] = useState(item?.outcome || "");
   const [stageCompleted, setStageCompleted] = useState(
     Boolean(
       item &&
@@ -186,31 +188,76 @@ export function ApplicationForm({
       <Form
         onClose={onClose}
         disabled={recognizing}
+        onDelete={
+          linkedApplicationId
+            ? async () => {
+                if (
+                  !window.confirm(
+                    `删除「${draft.company} · ${draft.role}」这条投递？关联日程及提醒、简历和面试资料会保留，日程可在日历中另行删除。此操作不可撤销。`,
+                  )
+                )
+                  return false;
+                await mutateOptimistic(
+                  {
+                    action: "application.delete",
+                    id: linkedApplicationId,
+                    version: persisted?.version ?? item?.version,
+                  },
+                  (current) => ({
+                    ...current,
+                    applications: current.applications.filter(
+                      (application) => application.id !== linkedApplicationId,
+                    ),
+                    events: current.events.map((event) =>
+                      event.applicationId === linkedApplicationId
+                        ? { ...event, applicationId: null }
+                        : event,
+                    ),
+                    preparations: current.preparations.map((prep) =>
+                      prep.applicationId === linkedApplicationId
+                        ? { ...prep, applicationId: null }
+                        : prep,
+                    ),
+                    files: current.files.map((file) =>
+                      file.applicationId === linkedApplicationId
+                        ? { ...file, applicationId: null }
+                        : file,
+                    ),
+                  }),
+                );
+                notify("投递已删除，关联日程及资料已保留。");
+                return true;
+              }
+            : undefined
+        }
         onSubmit={async (f) => {
+          createId.current ??= crypto.randomUUID();
           const reminderHours = [
             ...schedule.reminderHours,
             ...(schedule.customHours ? [Number(schedule.customHours)] : []),
           ];
-          const schedulePayload = eventKind
-            ? hasSchedule
-              ? {
-                  mode: "upsert",
-                  start: iso(schedule.start),
-                  end: iso(schedule.end),
-                  deadline: iso(schedule.deadline),
-                  location: schedule.location,
-                  reminderHours: [...new Set(reminderHours)],
-                  absoluteReminders: schedule.absoluteReminder
-                    ? [iso(schedule.absoluteReminder)]
-                    : [],
-                  allowConflict: schedule.allowConflict,
-                }
-              : linkedSchedule && !stageCompleted
-                ? { mode: "remove" }
-                : undefined
-            : undefined;
+          const schedulePayload =
+            eventKind && !outcome
+              ? hasSchedule
+                ? {
+                    mode: "upsert",
+                    start: iso(schedule.start),
+                    end: iso(schedule.end),
+                    deadline: iso(schedule.deadline),
+                    location: schedule.location,
+                    reminderHours: [...new Set(reminderHours)],
+                    absoluteReminders: schedule.absoluteReminder
+                      ? [iso(schedule.absoluteReminder)]
+                      : [],
+                    allowConflict: schedule.allowConflict,
+                  }
+                : linkedSchedule && !stageCompleted
+                  ? { mode: "remove" }
+                  : undefined
+              : undefined;
           const saved = (await api("/api/data", {
             action: "application.save",
+            createId: createId.current,
             id: persisted?.id || item?.id,
             version: persisted?.version ?? item?.version,
             schedule: schedulePayload,
@@ -245,8 +292,16 @@ export function ApplicationForm({
               );
             }
             throw error;
-          })) as { id: string; version: number };
+          })) as { id: string; version: number; replayed?: boolean };
           setPersisted(saved);
+          if (saved.replayed) {
+            void refresh().catch(() =>
+              notify("已找回上次保存的投递，但列表暂未刷新。"),
+            );
+            throw Error(
+              "上次新增投递已经成功，已找回原记录，没有重复创建。当前填写内容已保留；如有修改或待上传图片，请再次点击保存。",
+            );
+          }
           const pending = images.filter((image) => image.status !== "uploaded");
           const results = await Promise.allSettled(
             pending.map(async (image, index) => {
@@ -399,20 +454,27 @@ export function ApplicationForm({
                 <div
                   className={`automatic-stage-status status-${automaticStatus}`}
                 >
-                  <strong>{stageCompleted ? "已完成" : automaticStatus}</strong>
+                  <strong>
+                    {outcome
+                      ? "已结束"
+                      : stageCompleted
+                        ? "已完成"
+                        : automaticStatus}
+                  </strong>
                   <span>
-                    {stageCompleted
-                      ? stage === "面试"
-                        ? "等待面试结果"
-                        : "等待下一阶段"
-                      : automaticStatus === "待安排"
-                        ? "尚未设置日程"
-                        : automaticStatus === "待完成"
-                          ? "已关联日历安排"
-                          : "等待招聘方后续结果"}
+                    {outcome ||
+                      (stageCompleted
+                        ? stage === "面试"
+                          ? "等待面试结果"
+                          : "等待下一阶段"
+                        : automaticStatus === "待安排"
+                          ? "尚未设置日程"
+                          : automaticStatus === "待完成"
+                            ? "已关联日历安排"
+                            : "等待招聘方后续结果")}
                   </span>
                 </div>
-                {canCompleteStage && (
+                {canCompleteStage && !outcome && (
                   <label className="check stage-completed-toggle">
                     <input
                       type="checkbox"
@@ -434,8 +496,12 @@ export function ApplicationForm({
               defaultValue={inputDate(item?.appliedAt)}
             />
           </Field>
-          <Field label="终止结果">
-            <select name="outcome" defaultValue={item?.outcome || ""}>
+          <Field label="流程结果">
+            <select
+              name="outcome"
+              value={outcome}
+              onChange={(event) => setOutcome(event.target.value)}
+            >
               <option value="">仍在进行</option>
               {outcomes.map((s) => (
                 <option key={s}>{s}</option>
@@ -443,7 +509,26 @@ export function ApplicationForm({
             </select>
           </Field>
         </div>
-        {eventKind && (
+        {!outcome ? (
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => setOutcome("未通过")}
+          >
+            终止流程（未通过）
+          </button>
+        ) : (
+          <p className="schedule-warning" role="status">
+            {outcome}
+            ：点击保存后结束这份投递，取消尚未完成的关联日程及未发送提醒。历史记录和面试资料会保留。
+          </p>
+        )}
+        {item?.outcome && !outcome && (
+          <p className="help">
+            保存后恢复进行中；已取消的日程不会自动恢复，请按需重新安排。
+          </p>
+        )}
+        {eventKind && !outcome && (
           <section className="application-schedule">
             <div className="application-schedule-heading">
               <div>

@@ -4,7 +4,8 @@ import {
 } from "./application-stage";
 import { stages, type Application } from "./types";
 
-type ProgressState = "done" | "current" | "past" | "unrecorded" | "future";
+type ProgressState =
+  "done" | "current" | "past" | "unrecorded" | "future" | "ended";
 export function applicationProgress(
   application: Pick<
     Application,
@@ -39,6 +40,8 @@ export function applicationProgress(
             ? "past"
             : "unrecorded";
     }
+    if (current && ended && application.outcome !== "录用已接受")
+      state = "ended";
     const applied =
       stage === "已投递" && application.appliedAt
         ? new Date(application.appliedAt)
@@ -56,6 +59,6 @@ export function applicationProgress(
   return {
     steps,
     ended,
-    summary: `${application.stage} · ${application.outcome || applicationStageStatusLabel(application.stage, application.stageStatus)}`,
+    summary: `${application.stage} · ${application.outcome || applicationStageStatusLabel(application.stage, application.stageStatus)}${ended ? " · 已结束" : ""}`,
   };
 }

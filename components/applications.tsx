@@ -182,7 +182,9 @@ export default function Applications() {
                         {a.outcome || a.stage}
                       </b>
                       <small className="stage-detail">
-                        {applicationStageStatusLabel(a.stage, a.stageStatus)}
+                        {a.outcome
+                          ? `${a.stage} · 已结束`
+                          : applicationStageStatusLabel(a.stage, a.stageStatus)}
                       </small>
                     </span>
                     <span className="batch-cell">{a.batch}</span>
