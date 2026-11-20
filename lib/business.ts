@@ -448,7 +448,6 @@ export async function executeBusinessAction(
               version: { increment: 1 },
               history,
             },
-            select: { id: true, version: true },
           })
         : await tx.application.create({
             data: {
@@ -458,7 +457,6 @@ export async function executeBusinessAction(
               history,
               ...(createId ? { id: createId } : {}),
             },
-            select: { id: true, version: true },
           });
       if (values.outcome) {
         const events = await tx.event.findMany({
@@ -596,6 +594,7 @@ export async function executeBusinessAction(
       id: saved.id,
       version: saved.version,
       replayed,
+      ...(!replayed ? { application: saved } : {}),
     });
   } else if (action === "application.delete") {
     if (!id) throw Error("缺少记录编号");

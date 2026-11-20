@@ -15,7 +15,13 @@ export async function GET(request: Request) {
   try {
     const user = await userFor(request);
     const w = { userId: user.id };
-    const full = new URL(request.url).searchParams.get("scope") !== "core";
+    const requestedScope = new URL(request.url).searchParams.get("scope");
+    const scope =
+      requestedScope === "core" || requestedScope === "applications"
+        ? requestedScope
+        : "full";
+    const full = scope === "full";
+    const applicationDetails = scope !== "core";
     const [
       applications,
       events,
@@ -31,7 +37,7 @@ export async function GET(request: Request) {
     ] = await Promise.all([
       db.application.findMany({ where: w, orderBy: { updatedAt: "desc" } }),
       db.event.findMany({ where: w, orderBy: { start: "asc" } }),
-      full
+      applicationDetails
         ? db.resume.findMany({ where: w, orderBy: { createdAt: "desc" } })
         : Promise.resolve([]),
       full
@@ -58,7 +64,7 @@ export async function GET(request: Request) {
             orderBy: { updatedAt: "desc" },
           })
         : Promise.resolve([]),
-      full
+      applicationDetails
         ? db.fileAsset.findMany({
             where: w,
             select: {
@@ -103,6 +109,7 @@ export async function GET(request: Request) {
     });
     return Response.json({
       partial: !full,
+      scope,
       applications: applicationsWithAutomaticStatus,
       events,
       resumes,

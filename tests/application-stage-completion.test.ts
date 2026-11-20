@@ -78,7 +78,6 @@ describe("投递阶段手动完成", () => {
       id: "application-1",
     });
     expect(create).toHaveBeenCalledWith({
-      select: { id: true, version: true },
       data: expect.objectContaining({
         stage,
         stageStatus: "等待结果",

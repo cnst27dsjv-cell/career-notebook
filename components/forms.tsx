@@ -48,7 +48,8 @@ export function ApplicationForm({
   item?: Application;
   onClose: () => void;
 }) {
-  const { data, refresh, notify, mutateOptimistic } = useWorkspace();
+  const { data, refresh, notify, mutateOptimistic, acceptApplication } =
+    useWorkspace();
   const createId = useRef<string | undefined>(undefined);
   const [savePhase, setSavePhase] = useState("正在保存记录…");
   const [stage, setStage] = useState(item?.stage || "待投递");
@@ -305,8 +306,14 @@ export function ApplicationForm({
               );
             }
             throw error;
-          })) as { id: string; version: number; replayed?: boolean };
+          })) as {
+            id: string;
+            version: number;
+            replayed?: boolean;
+            application?: Application;
+          };
           setPersisted(saved);
+          if (saved.application) acceptApplication?.(saved.application);
           if (saved.replayed) {
             void refresh().catch(() =>
               notify("已找回上次保存的投递，但列表暂未刷新。"),
@@ -369,7 +376,7 @@ export function ApplicationForm({
             ),
           );
           const failed = results.find((result) => result.status === "rejected");
-          void refresh().catch(() =>
+          void refresh(pending.length ? "applications" : "core").catch(() =>
             notify("已保存，但页面刷新失败，请手动重试。"),
           );
           if (failed?.status === "rejected")

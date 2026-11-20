@@ -3,13 +3,14 @@ import type { Data } from "./types";
 // Keep the deadline active until the body has arrived, not just the headers.
 export async function loadWorkspaceData(
   initial: boolean,
+  scope?: "core" | "applications",
 ): Promise<Data | null> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 90_000);
     try {
       const response = await fetch(
-        initial ? "/api/data?scope=core" : "/api/data",
+        initial ? "/api/data?scope=core" : scope ? `/api/data?scope=${scope}` : "/api/data",
         {
           cache: "no-store",
           signal: controller.signal,

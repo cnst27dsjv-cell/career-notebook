@@ -19,7 +19,11 @@ import {
   SpeakerSlash,
 } from "@phosphor-icons/react";
 import { Context, api } from "./context";
-import type { Data, Interview } from "@/lib/types";
+import type { Data, Interview, Application } from "@/lib/types";
+import {
+  mergeWorkspaceData,
+  acceptSavedApplication,
+} from "@/lib/workspace-merge";
 import { loadWorkspaceData } from "@/lib/workspace-load";
 import Today from "./today";
 import Applications from "./applications";
@@ -35,7 +39,9 @@ const viewLoading = ({
   <div role={error ? "alert" : "status"}>
     <p>{error ? "这个栏目暂时未能加载，请重试。" : "正在打开栏目…"}</p>
     {error && (
-      <button className="secondary" onClick={retry}>重新加载栏目</button>
+      <button className="secondary" onClick={retry}>
+        重新加载栏目
+      </button>
     )}
   </div>
 );
@@ -45,7 +51,9 @@ const Preparations = dynamic(() => import("./preparations"), {
   loading: viewLoading,
 });
 const Settings = dynamic(() => import("./settings"), { loading: viewLoading });
-const Assistant = dynamic(() => import("./assistant"), { loading: viewLoading });
+const Assistant = dynamic(() => import("./assistant"), {
+  loading: viewLoading,
+});
 const tabs = [
   { id: "today", label: "今日", en: "Today", icon: House },
   { id: "calendar", label: "日历", en: "Calendar", icon: CalendarBlank },
@@ -62,50 +70,92 @@ export default function Workspace({ demo }: { demo: boolean }) {
   const [mobileFiles, setMobileFiles] = useState(false);
   const refreshPromise = useRef<Promise<void> | null>(null);
   const initialLoadComplete = useRef(false);
+  const refreshRevision = useRef(0);
+  const refreshScope = useRef("full");
   const dataRevision = useRef(0);
   const activeMutations = useRef(0);
   const refreshQueued = useRef(false);
   const router = useRouter();
   const pageSound = usePageSound();
-  const refresh = useCallback(() => {
-    if (activeMutations.current > 0) {
-      refreshQueued.current = true;
-      return Promise.resolve();
-    }
-    if (refreshPromise.current) return refreshPromise.current;
-    const revision = dataRevision.current;
-    const initial = !initialLoadComplete.current;
-    const request = (async () => {
-      const result = await loadWorkspaceData(initial);
-      if (result === null) {
-        window.location.href = "/login";
-        return;
+  const refresh = useCallback(
+    (scope?: "core" | "applications"): Promise<void> => {
+      if (activeMutations.current > 0) {
+        refreshQueued.current = true;
+        return Promise.resolve();
       }
-      initialLoadComplete.current = true;
-      if (revision === dataRevision.current && activeMutations.current === 0) {
-        setData(result);
-        setError("");
-      } else refreshQueued.current = true;
-    })().finally(() => {
-      if (refreshPromise.current === request) refreshPromise.current = null;
-    });
-    refreshPromise.current = request;
-    return request;
-  }, []);
+      const requestedScope = !initialLoadComplete.current
+        ? "core"
+        : scope || "full";
+      if (refreshPromise.current) {
+        if (
+          refreshRevision.current === dataRevision.current &&
+          (refreshScope.current === "full" ||
+            refreshScope.current === requestedScope ||
+            requestedScope === "core")
+        )
+          return refreshPromise.current;
+        // A save finished during an older read. Wait, then request fresh data.
+        return refreshPromise.current
+          .catch(() => {})
+          .then(() => refresh(scope));
+      }
+      const revision = dataRevision.current;
+      refreshRevision.current = revision;
+      refreshScope.current = requestedScope;
+      const initial = !initialLoadComplete.current;
+      const request = (async () => {
+        const result = await loadWorkspaceData(initial, scope);
+        if (result === null) {
+          window.location.href = "/login";
+          return;
+        }
+        initialLoadComplete.current = true;
+        if (
+          revision === dataRevision.current &&
+          activeMutations.current === 0
+        ) {
+          setData((current) => mergeWorkspaceData(current, result));
+          setError("");
+        } else refreshQueued.current = true;
+      })().finally(() => {
+        if (refreshPromise.current === request) refreshPromise.current = null;
+      });
+      refreshPromise.current = request;
+      return request;
+    },
+    [],
+  );
   useEffect(() => {
     void refresh()
-      .then(() => refresh())
+      .then(() =>
+        refresh(
+          new URLSearchParams(window.location.search).get("view") ===
+            "applications"
+            ? "applications"
+            : undefined,
+        ),
+      )
       .catch((e) => setError(e.message));
     const apply = () =>
       setView(
         new URLSearchParams(window.location.search).get("view") || "today",
       );
     apply();
-    window.addEventListener("popstate", apply);
-    const focus = () => void refresh().catch(() => {});
+    const onPopState = () => {
+      apply();
+      void refresh().catch((e) => setError(e.message));
+    };
+    window.addEventListener("popstate", onPopState);
+    const focus = () =>
+      void refresh(
+        new URLSearchParams(window.location.search).get("view") ===
+          "applications"
+          ? "applications"
+          : undefined,
+      ).catch(() => {});
     window.addEventListener("focus", focus);
     return () => {
-      window.removeEventListener("popstate", apply);
+      window.removeEventListener("popstate", onPopState);
       window.removeEventListener("focus", focus);
     };
   }, [refresh]);
@@ -114,6 +164,12 @@ export default function Workspace({ demo }: { demo: boolean }) {
     const t = setTimeout(() => setToast(""), 5500);
     return () => clearTimeout(t);
   }, [toast]);
+  const acceptApplication = useCallback((application: Application) => {
+    dataRevision.current += 1;
+    setData((current) =>
+      current ? acceptSavedApplication(current, application) : current,
+    );
+  }, []);
   const acceptInterview = useCallback((session: Interview) => {
     dataRevision.current += 1;
     setData((current) => {
@@ -133,6 +189,8 @@ export default function Workspace({ demo }: { demo: boolean }) {
   const navigate = (v: string) => {
     if (v !== view) pageSound.play();
     setView(v);
+    if (data?.partial && v !== "applications")
+      void refresh().catch((e) => setError(e.message));
     window.history.pushState(null, "", "/?view=" + v);
     setMobileFiles(false);
   };
@@ -232,6 +290,7 @@ export default function Workspace({ demo }: { demo: boolean }) {
         mutate,
         mutateOptimistic,
         acceptInterview,
+        acceptApplication,
         notify: setToast,
       }}
     >
@@ -330,7 +389,15 @@ export default function Workspace({ demo }: { demo: boolean }) {
               </button>
             </div>
           )}
-          {view === "today" ? (
+          {data.partial &&
+          !["today", "applications", "calendar"].includes(view) ? (
+            viewLoading({
+              error: error ? new Error(error) : null,
+              retry: () => {
+                void refresh().catch((e) => setError(e.message));
+              },
+            })
+          ) : view === "today" ? (
             <Today navigate={navigate} />
           ) : view === "applications" ? (
             <Applications />

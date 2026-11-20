@@ -1,9 +1,10 @@
 "use client";
 import { createContext, useContext } from "react";
-import type { Data, Interview } from "@/lib/types";
+import type { Data, Interview, Application } from "@/lib/types";
 export const Context = createContext<{
   data: Data;
-  refresh: () => Promise<void>;
+  refresh: (scope?: "core" | "applications") => Promise<void>;
+  acceptApplication?: (application: Application) => void;
   acceptInterview?: (session: Interview) => void;
   notify: (s: string) => void;
   mutate: (v: Record<string, unknown>) => Promise<void>;

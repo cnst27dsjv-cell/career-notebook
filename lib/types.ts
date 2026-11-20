@@ -113,6 +113,7 @@ export type Interview = {
 };
 export type Data = {
   partial?: boolean;
+  scope?: "core" | "applications" | "full";
   applications: Application[];
   events: Event[];
   resumes: Resume[];

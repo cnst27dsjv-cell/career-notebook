@@ -33,6 +33,8 @@ it("retries a creation after a lost response without creating a second applicati
       values: { ...values, role: "重试时新填写的岗位" },
     })
   ).json();
+  expect(first.application).toMatchObject({ id: first.id, company: "复星创富", role: "投资实习生", version: 1 });
+  expect(retry.application).toBeUndefined();
   expect(retry).toMatchObject({ id: first.id, version: 1, replayed: true });
   expect(rows.size).toBe(1);
   expect([...rows.values()][0].role).toBe("投资实习生");

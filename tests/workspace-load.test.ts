@@ -99,3 +99,9 @@ describe("workspace loading recovery", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 });
+it("requests the application scope instead of all interview materials after a save", async () => {
+ const urls: string[]=[];
+ vi.stubGlobal("fetch",async (url:string)=>{urls.push(url);return Response.json({partial:true,scope:"applications",applications:[]});});
+ await loadWorkspaceData(false,"applications");
+ expect(urls).toEqual(["/api/data?scope=applications"]);
+});
