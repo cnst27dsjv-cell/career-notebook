@@ -37,6 +37,7 @@ export function Form({
   children,
   onSubmit,
   submit = "保存",
+  busyLabel = "正在保存…",
   onClose,
   disabled = false,
   closeOnSubmitStart = false,
@@ -46,6 +47,7 @@ export function Form({
   children: React.ReactNode;
   onSubmit: (f: FormData) => Promise<void>;
   submit?: string;
+  busyLabel?: string;
   onClose?: () => void;
   disabled?: boolean;
   closeOnSubmitStart?: boolean;
@@ -119,7 +121,7 @@ export function Form({
           </button>
         )}
         <button className="primary" disabled={busy || disabled}>
-          {busy && !deleting ? "正在保存…" : submit}
+          {busy && !deleting ? busyLabel : submit}
         </button>
       </div>
     </form>

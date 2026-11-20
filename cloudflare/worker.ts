@@ -18,22 +18,29 @@ async function run<T>(env: Env, action: () => Promise<T>) {
   }
 }
 export default {
-  fetch(request: Request, env: Env, ctx: unknown) {
+  fetch(
+    request: Request,
+    env: Env,
+    ctx: { waitUntil?: (task: Promise<void>) => void },
+  ) {
     if (
       new URL(request.url).pathname === "/api/data" &&
       ["GET", "POST"].includes(request.method)
     ) {
-      return withRequestDatabase(env.DATABASE_URL, (db) =>
-        context.run({ db, files: env.FILES }, async () => {
-          // Import within the request: the auth adapter needs the current DB.
-          // Reuse the same authenticated handlers without the page pipeline.
-          const data = await import("../app/api/data/route");
-          const response = await (
-            request.method === "GET" ? data.GET : data.POST
-          )(request);
-          response.headers.set("Cache-Control", "no-store");
-          return response;
-        }),
+      return withRequestDatabase(
+        env.DATABASE_URL,
+        (db) =>
+          context.run({ db, files: env.FILES }, async () => {
+            // Import within the request: the auth adapter needs the current DB.
+            // Reuse the same authenticated handlers without the page pipeline.
+            const data = await import("../app/api/data/route");
+            const response = await (
+              request.method === "GET" ? data.GET : data.POST
+            )(request);
+            response.headers.set("Cache-Control", "no-store");
+            return response;
+          }),
+        ctx.waitUntil ? (task) => ctx.waitUntil!(task) : undefined,
       );
     }
     return run(env, () => handler.fetch(request, env, ctx));

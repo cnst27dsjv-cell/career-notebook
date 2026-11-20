@@ -9,6 +9,7 @@ let idle: { connectionString: string; db: PrismaClient } | undefined;
 export async function withRequestDatabase<T>(
   connectionString: string,
   action: (db: PrismaClient) => Promise<T>,
+  deferCleanup?: (task: Promise<void>) => void,
 ): Promise<T> {
   const db =
     idle?.connectionString === connectionString
@@ -23,7 +24,15 @@ export async function withRequestDatabase<T>(
     succeeded = true;
     return result;
   } finally {
-    await db.$disconnect();
-    if (succeeded && !idle) idle = { connectionString, db };
+    const cleanup = db.$disconnect().then(() => {
+      if (succeeded && !idle) idle = { connectionString, db };
+    });
+    if (deferCleanup)
+      deferCleanup(
+        cleanup.catch(() => {
+          console.error("Database cleanup failed");
+        }),
+      );
+    else await cleanup;
   }
 }

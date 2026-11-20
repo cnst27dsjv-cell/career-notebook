@@ -1,4 +1,5 @@
 "use client";
+import { withRequestTimeout } from "@/lib/request-timeout";
 import { useEffect, useRef, useState } from "react";
 import type { Application, Data, Event, Material, Prep } from "@/lib/types";
 import { kinds, stages, outcomes } from "@/lib/types";
@@ -49,6 +50,7 @@ export function ApplicationForm({
 }) {
   const { data, refresh, notify, mutateOptimistic } = useWorkspace();
   const createId = useRef<string | undefined>(undefined);
+  const [savePhase, setSavePhase] = useState("正在保存记录…");
   const [stage, setStage] = useState(item?.stage || "待投递");
   const [outcome, setOutcome] = useState(item?.outcome || "");
   const [stageCompleted, setStageCompleted] = useState(
@@ -186,6 +188,7 @@ export function ApplicationForm({
       wide
     >
       <Form
+        busyLabel={savePhase}
         onClose={onClose}
         disabled={recognizing}
         onDelete={
@@ -231,6 +234,7 @@ export function ApplicationForm({
             : undefined
         }
         onSubmit={async (f) => {
+          setSavePhase("正在保存记录…");
           createId.current ??= crypto.randomUUID();
           const reminderHours = [
             ...schedule.reminderHours,
@@ -255,27 +259,36 @@ export function ApplicationForm({
                   ? { mode: "remove" }
                   : undefined
               : undefined;
-          const saved = (await api("/api/data", {
-            action: "application.save",
-            createId: createId.current,
-            id: persisted?.id || item?.id,
-            version: persisted?.version ?? item?.version,
-            schedule: schedulePayload,
-            stageCompleted,
-            values: {
-              company: draft.company,
-              role: draft.role,
-              city: draft.city,
-              batch: draft.batch,
-              stage,
-              outcome: val(f, "outcome"),
-              appliedAt: iso(f.get("appliedAt")),
-              url: draft.url,
-              jd: draft.jd,
-              notes: val(f, "notes"),
-              resumeId: val(f, "resumeId") || null,
-            },
-          }).catch(async (error: unknown) => {
+          const saved = (await withRequestTimeout(
+            (signal) =>
+              api(
+                "/api/data",
+                {
+                  action: "application.save",
+                  createId: createId.current,
+                  id: persisted?.id || item?.id,
+                  version: persisted?.version ?? item?.version,
+                  schedule: schedulePayload,
+                  stageCompleted,
+                  values: {
+                    company: draft.company,
+                    role: draft.role,
+                    city: draft.city,
+                    batch: draft.batch,
+                    stage,
+                    outcome: val(f, "outcome"),
+                    appliedAt: iso(f.get("appliedAt")),
+                    url: draft.url,
+                    jd: draft.jd,
+                    notes: val(f, "notes"),
+                    resumeId: val(f, "resumeId") || null,
+                  },
+                },
+                signal,
+              ),
+            30000,
+            "保存响应超时，暂时无法确认是否已保存。当前填写内容已保留，请稍后重试；新增投递会复用原记录，避免重复创建。",
+          ).catch(async (error: unknown) => {
             if (
               error instanceof Error &&
               /投递记录已更新|记录已在其他设备修改/.test(error.message)
@@ -303,6 +316,8 @@ export function ApplicationForm({
             );
           }
           const pending = images.filter((image) => image.status !== "uploaded");
+          if (pending.length)
+            setSavePhase(`记录已保存，正在上传 ${pending.length} 张图片…`);
           const results = await Promise.allSettled(
             pending.map(async (image, index) => {
               const upload = new FormData();
@@ -310,14 +325,21 @@ export function ApplicationForm({
               upload.set("sortOrder", String(existingImages.length + index));
               upload.set("clientId", image.clientId);
               upload.set("file", image.file);
-              const response = await fetch("/api/application-images", {
-                method: "POST",
-                body: upload,
-              });
-              const result = await response.json();
-              if (!response.ok)
-                throw Error(result.error || `${image.file.name} 上传失败`);
-              return { clientId: image.clientId, id: String(result.id) };
+              return withRequestTimeout(
+                async (signal) => {
+                  const response = await fetch("/api/application-images", {
+                    signal,
+                    method: "POST",
+                    body: upload,
+                  });
+                  const result = await response.json();
+                  if (!response.ok)
+                    throw Error(result.error || `${image.file.name} 上传失败`);
+                  return { clientId: image.clientId, id: String(result.id) };
+                },
+                60000,
+                "投递记录已保存，但图片上传响应超时。图片仍保留在当前窗口，请稍后重试保存。",
+              );
             }),
           );
           const uploaded = new Map(

@@ -42,11 +42,12 @@ export const inputDate = (d: string | null | undefined) =>
     : "";
 export const iso = (v: FormDataEntryValue | null) =>
   v ? new Date(String(v) + "+08:00").toISOString() : null;
-export async function api(url: string, values: unknown) {
+export async function api(url: string, values: unknown, signal?: AbortSignal) {
   const r = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(values),
+    signal,
   });
   if (r.status === 401) throw Error("登录状态已失效，请重新登录后再操作。");
   let result;

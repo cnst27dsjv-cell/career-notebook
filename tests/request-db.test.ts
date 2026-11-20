@@ -78,3 +78,36 @@ it("does not reuse clients for a different database", async () => {
   const b = await withRequestDatabase("postgresql://b", async (db) => db);
   expect(a).not.toBe(b);
 });
+it("returns committed results before slow cleanup and only reuses a fully closed client", async () => {
+  const { withRequestDatabase } = await import("../cloudflare/request-db");
+  let finish!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const background: Promise<unknown>[] = [];
+  let returned = false;
+  const first = withRequestDatabase(
+    "postgresql://a",
+    async (db) => {
+      vi.mocked(db.$disconnect).mockImplementationOnce(() => gate);
+      return "saved";
+    },
+    (task) => {
+      background.push(task);
+    },
+  ).then((value) => {
+    returned = true;
+    return value;
+  });
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  try {
+    expect(returned).toBe(true);
+    expect(await first).toBe("saved");
+    await withRequestDatabase("postgresql://a", async () => {});
+    expect(created).toHaveLength(2);
+  } finally {
+    finish();
+    await first;
+    await Promise.all(background);
+  }
+});
